@@ -39,11 +39,15 @@ from home_platform.suncg import SunCgSceneLoader, loadModel
 from home_platform.rendering import RgbRenderer
 from home_platform.physics import Panda3dBulletPhysics
 
-try:
-    SUNCG_DATA_DIR = os.environ["SUNCG_DATA_DIR"]
-except KeyError:
-    print("Please set the environment variable SUNCG_DATA_DIR")
-    sys.exit(1)
+#####
+TEST_SUNCG_DATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "..", "tests", "data", "suncg")
+SUNCG_DATA_DIR=TEST_SUNCG_DATA_DIR
+#####
+#try:
+#    SUNCG_DATA_DIR = os.environ["SUNCG_DATA_DIR"]
+#except KeyError:
+#    print("Please set the environment variable SUNCG_DATA_DIR")
+#    sys.exit(1)
 
 CDIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -63,7 +67,8 @@ class Agent(object):
 
         # Define a simple sphere model
         modelId = 'sphere-0'
-        modelFilename = os.path.join(CDIR, 'sphere.egg')
+#        modelFilename = os.path.join(CDIR, 'sphere.egg')
+        modelFilename = os.path.join(CDIR, '77.bam')
 
         agentNp.setTag('model-id', modelId)
         model = loadModel(modelFilename)
@@ -175,7 +180,7 @@ def main():
 
     # Initialize rendering and physics
     renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
-    renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
+    renderer.showRoomLayout(showCeilings=True, showWalls=True, showFloors=True)
     physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
                                    agentRadius=agentRadius, agentMode='sphere')
 
