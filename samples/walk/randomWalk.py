@@ -46,7 +46,7 @@ def main():
     env.setAgentOrientation((60.0, 0.0, 0.0))
     env.setAgentPosition((42, -39, 1.0))
     
-    env.renderWorld.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
+    env.renderWorld.showRoomLayout(showCeilings=True, showWalls=True, showFloors=True)
     
     viewer = Viewer(env.scene, interactive=False, showPosition=True)
     

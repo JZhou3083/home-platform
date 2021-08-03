@@ -38,6 +38,11 @@ try:
 except KeyError:
     raise Exception("Please set the environment variable SUNCG_DATA_DIR")
 
+TEST_SUNCG_DATA_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "data", "suncg")
+
+#### added this to make it running with test data
+SUNCG_DATA_DIR=TEST_SUNCG_DATA_DIR
+####
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +80,7 @@ class TestFunctions(unittest.TestCase):
         plt.imshow(image)
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
 
@@ -130,7 +135,7 @@ class TestNavigationHelper(unittest.TestCase):
         plt.imshow(wallMap, cmap='gray')
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
     def testCalculateFloorMap(self):
@@ -157,7 +162,7 @@ class TestNavigationHelper(unittest.TestCase):
         plt.imshow(floorMap, cmap='gray')
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
     def testCalculateObstacleMap(self):
@@ -184,7 +189,7 @@ class TestNavigationHelper(unittest.TestCase):
         plt.imshow(obstacleMap, cmap='gray')
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
     def testCalculateOccupancyMap(self):
@@ -211,7 +216,7 @@ class TestNavigationHelper(unittest.TestCase):
         plt.imshow(occupancyMap, cmap='gray')
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
     def testCalculateNavigationGraph(self):
@@ -238,7 +243,7 @@ class TestNavigationHelper(unittest.TestCase):
             plt.plot(ps[0], ps[1], 'r.', zorder=2)
 
         plt.draw()
-        plt.pause(1.0)
+        plt.pause(5.0)
         plt.close(fig)
 
 

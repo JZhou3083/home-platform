@@ -43,7 +43,8 @@ class TestScene(unittest.TestCase):
         scene = Scene()
 
         # Load object to scene
-        modelId = '126'
+#        modelId = '126'
+        modelId = '135'
         modelFilename = os.path.join(
             TEST_SUNCG_DATA_DIR, "object", str(modelId), str(modelId) + ".egg")
         assert os.path.exists(modelFilename)

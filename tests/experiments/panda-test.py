@@ -10,7 +10,8 @@ class MyApp(ShowBase):
         ShowBase.__init__(self)
 
         # Load the environment model.
-        self.scene = self.loader.loadModel("models/environment")
+#        self.scene = self.loader.loadModel("models/environment")
+        self.scene = self.loader.loadModel("../data/suncg/object/126/126.egg")
         # Reparent the model to render.
         self.scene.reparentTo(self.render)
         # Apply scale and position transforms on the model.
