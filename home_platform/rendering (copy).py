@@ -1196,18 +1196,11 @@ class RgbRenderer(object):
         # Attach a camera to every agent in the scene
         self.cameras = []
         for agentNp in self.scene.scene.findAllMatches('**/agents/agent*'):
-            a=agentNp.getChild(0).getChild(1) ## point it to the Neck
-#            a=agentNp.getChild(0).getChild(0).getChild(1) # point to the eye
-
+            a=agentNp.getChild(0).getChild(1) ## point it to the head
 #             a=agentNp
-	    
             camera = a.attachNewNode(ModelNode('camera-rgb'))
-#            if self.cameraTransform is not None:
-#                camera.setTransform(cameraTransform)
-            
-            camera.setPos(0,-0.5,2)
-            camera.setHpr(180,0,0)
-            camera.reparentTo(a)
+            if self.cameraTransform is not None:
+                camera.setTransform(cameraTransform)
             camera.node().setPreserveTransform(ModelNode.PTLocal)
             self.cameras.append(camera)
 
@@ -1219,6 +1212,30 @@ class RgbRenderer(object):
 
         self.notifySceneChanged()
 
+    # def notifySceneChanged(self):
+    #
+    #     for modelNp in self.scene.scene.findAllMatches('**/model-*'):
+    #
+    #         isInitialized = False
+    #         objectNp = modelNp.getParent()
+    #         for childNp in modelNp.getChildren():
+    #             if childNp.getName() == 'render-rgb':
+    #                 isInitialized = True
+    #                 break
+    #
+    #         if not isInitialized:
+    #             rendererNp = objectNp.attachNewNode('render-rgb')
+    #             model = modelNp.copyTo(rendererNp)
+    #
+    #             # Set the model to be visible only to this camera
+    #             model.hide(BitMask32.allOn())
+    #             model.show(self.cameraMask)
+    #
+    #             # Reparent render node below the existing physic node (if any)
+    #             physicsNp = objectNp.find('**/physics')
+    #             if not physicsNp.isEmpty():
+    #                 rendererNp.reparentTo(physicsNp)
+#### Instead of model, attach to head    
     def notifySceneChanged(self):
 
         for modelNp in self.scene.scene.findAllMatches('**/model-*'):
@@ -1242,7 +1259,6 @@ class RgbRenderer(object):
                 physicsNp = objectNp.find('**/physics')
                 if not physicsNp.isEmpty():
                     rendererNp.reparentTo(physicsNp)
-
     def setBackgroundColor(self, rgba):
         for buf in six.itervalues(self.rgbBuffers):
             buf.setClearColor(LVector4f(*rgba))
@@ -1833,205 +1849,3 @@ def getColorAttributesFromModel(model, region=None):
     areas /= np.sum(areas)
 
     return areas, rgbColors, transparencies, textures
-
-
-class RgbRenderer1(object):
-    def __init__(self, scene, size=(512, 512), mode='offscreen', zNear=0.1, zFar=1000.0, fov=40.0, cameraTransform=None):
-
-        # Off-screen buffers are not supported in OSX
-        if sys.platform == 'darwin':
-            mode = 'onscreen'
-
-        super(RgbRenderer1, self).__init__()
-
-        self.__dict__.update(scene=scene, size=size, mode=mode, zNear=zNear, zFar=zFar, fov=fov,
-                             cameraTransform=cameraTransform)
-
-        self.cameraMask = BitMask32.bit(0)
-        self.graphicsEngine = GraphicsEngine.getGlobalPtr()
-        self.loader = Loader.getGlobalPtr()
-        self.graphicsEngine.setDefaultLoader(self.loader)
-
-        # Change some scene attributes for rendering
-        self.scene.scene.setAttrib(RescaleNormalAttrib.makeDefault())
-        self.scene.scene.setTwoSided(True)
-
-        selection = GraphicsPipeSelection.getGlobalPtr()
-        self.pipe = selection.makeDefaultPipe()
-        logger.debug('Using %s' % (self.pipe.getInterfaceName()))
-
-        # Attach a camera to every agent in the scene
-        self.cameras = []
-        for agentNp in self.scene.scene.findAllMatches('**/agents/agent*'):
-            # a=agentNp.getChild(0).getChild(1) ## point it to the Neck
-#            a=agentNp.getChild(0).getChild(0).getChild(1) # point to the eye
-
-            a=agentNp
-
-            camera = a.attachNewNode(ModelNode('camera-rgb'))
-#            if self.cameraTransform is not None:
-#                camera.setTransform(cameraTransform)
-
-            camera.setPos(0,-0.5,2)
-            camera.setHpr(180,0,0)
-            camera.reparentTo(a)
-            camera.node().setPreserveTransform(ModelNode.PTLocal)
-            self.cameras.append(camera)
-
-        self.rgbBuffers = dict()
-        self.rgbTextures = dict()
-
-        self._initRgbCapture()
-        self._addDefaultLighting()
-
-        self.notifySceneChanged()
-
-    def notifySceneChanged(self):
-
-        for modelNp in self.scene.scene.findAllMatches('**/model-*'):
-
-            isInitialized = False
-            objectNp = modelNp.getParent()
-            for childNp in modelNp.getChildren():
-                if childNp.getName() == 'render-rgb':
-                    isInitialized = True
-                    break
-
-            if not isInitialized:
-                rendererNp = objectNp.attachNewNode('render-rgb')
-                model = modelNp.copyTo(rendererNp)
-
-                # Set the model to be visible only to this camera
-                model.hide(BitMask32.allOn())
-                model.show(self.cameraMask)
-
-                # Reparent render node below the existing physic node (if any)
-                physicsNp = objectNp.find('**/physics')
-                if not physicsNp.isEmpty():
-                    rendererNp.reparentTo(physicsNp)
-
-    def setBackgroundColor(self, rgba):
-        for buf in six.itervalues(self.rgbBuffers):
-            buf.setClearColor(LVector4f(*rgba))
-
-    def _initRgbCapture(self):
-
-        for camera in self.cameras:
-
-            camNode = Camera('RGB camera')
-            camNode.setCameraMask(self.cameraMask)
-            lens = PerspectiveLens()
-            lens.setFov(self.fov)
-            lens.setAspectRatio(float(self.size[0]) / float(self.size[1]))
-            lens.setNear(self.zNear)
-            lens.setFar(self.zFar)
-            camNode.setLens(lens)
-            camNode.setScene(self.scene.scene)
-            cam = camera.attachNewNode(camNode)
-
-            winprops = WindowProperties.size(self.size[0], self.size[1])
-            fbprops = FrameBufferProperties.getDefault()
-            fbprops = FrameBufferProperties(fbprops)
-            fbprops.setRgbaBits(8, 8, 8, 0)
-
-            flags = GraphicsPipe.BFFbPropsOptional
-            if self.mode == 'onscreen':
-                flags = flags | GraphicsPipe.BFRequireWindow
-            elif self.mode == 'offscreen':
-                flags = flags | GraphicsPipe.BFRefuseWindow
-            else:
-                raise Exception('Unsupported rendering mode: %s' % (self.mode))
-
-            buf = self.graphicsEngine.makeOutput(self.pipe, 'RGB buffer Rendering', 0, fbprops,
-                                                 winprops, flags)
-            if buf is None:
-                raise Exception('Unable to create RGB buffer')
-
-            # Set to render at the end
-            buf.setSort(10000)
-
-            dr = buf.makeDisplayRegion()
-            dr.setSort(0)
-            dr.setCamera(cam)
-            dr = camNode.getDisplayRegion(0)
-
-            tex = Texture()
-            tex.setFormat(Texture.FRgb8)
-            tex.setComponentType(Texture.TUnsignedByte)
-            buf.addRenderTexture(
-                tex, GraphicsOutput.RTMCopyRam, GraphicsOutput.RTPColor)
-            tex.makeRamImage()
-            # XXX: should use tex.setMatchFramebufferFormat(True)?
-            # agent=camera.getParent() # This is when camer is mounted on agent
-            agent = camera.getParent()
-            self.rgbBuffers[agent.getName()] = buf
-            self.rgbTextures[agent.getName()] = tex
-
-    def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
-
-        for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*c'):
-            if showCeilings:
-                np.show(self.cameraMask)
-            else:
-                np.hide(BitMask32.allOn())
-
-        for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*w'):
-            if showWalls:
-                np.show(self.cameraMask)
-            else:
-                np.hide(BitMask32.allOn())
-
-        for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*f'):
-            if showFloors:
-                np.show(self.cameraMask)
-            else:
-                np.hide(BitMask32.allOn())
-
-    def destroy(self):
-        self.graphicsEngine.removeAllWindows()
-        del self.pipe
-
-    def getRgbImage(self, agentId, channelOrder="RGB"):
-
-        self.graphicsEngine.renderFrame()
-
-        # NOTE: we need to call frame rendering twice in onscreen mode because
-        # of double-buffering
-        if self.mode == 'onscreen':
-            self.graphicsEngine.renderFrame()
-        tex = self.rgbTextures[agentId]
-
-        # XXX: not sure about calling makeRamImage() before getting the image data, since it returns an empty image
-        # and overwrite any previously rendered image. We may just call it
-        # once when we create the texture.
-        if not tex.mightHaveRamImage():
-            tex.makeRamImage()
-
-        if sys.version_info[0] < 3:
-            data = tex.getRamImageAs(channelOrder).getData()   # Python 2
-        else:
-            # NOTE: see https://github.com/panda3d/panda3d/issues/173
-            data = bytes(memoryview(
-                tex.getRamImageAs(channelOrder)))  # Python 3
-
-        # Must match Texture.TUnsignedByte
-        image = np.frombuffer(data, dtype=np.uint8)
-
-        image.shape = (tex.getYSize(), tex.getXSize(), len(channelOrder))
-        image = np.flipud(image)
-
-        return image
-
-    def _addDefaultLighting(self):
-        alight = AmbientLight('alight')
-        alight.setColor(LVector4f(0.2, 0.2, 0.2, 1))
-        alnp = self.scene.scene.attachNewNode(alight)
-        self.scene.scene.setLight(alnp)
-
-        for camera in self.cameras:
-
-            # NOTE: Point light following the camera
-            plight = PointLight('plight')
-            plight.setColor(LVector4f(1.0, 1.0, 1.0, 1))
-            plnp = camera.attachNewNode(plight)
-            self.scene.scene.setLight(plnp)
