@@ -1,5 +1,7 @@
 # Copyright (c) 2017, IGLU consortium
 # All rights reserved.
+# Copyright (c) 2017, IGLU consortium
+# All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without modification,
 # are permitted provided that the following conditions are met:
@@ -431,3 +433,223 @@ class Viewer(ShowBase):
         ShowBase.destroy(self)
         # this should only be destroyed by the Python garbage collector
         # StaticShowBase.instance.destroy()
+            
+class gamer(ShowBase):
+    def __init__(self, agents, size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, showPosition=False,
+                 cameraTransform=None, cameraMask=None):
+
+        ShowBase.__init__(self)
+
+        self.__dict__.update(scene=agents[0].scene, size=size, fov=fov,
+                             zNear=zNear, zFar=zFar, shadowing=shadowing, showPosition=showPosition,
+                             cameraTransform=cameraTransform, cameraMask=cameraMask)
+	# This is used to store which keys are currently pressed.
+        self.keyMap = {
+            "left": 0,
+            "right": 0,
+            "forward": 0,
+            "backward": 0,
+            "cam-left": 0,
+            "cam-right": 0,
+            "head-left": 0,
+            "head-right": 0,
+            "camera-shift": 0
+
+        }
+
+
+        # Find agent and reparent camera to it
+        self.model=agents[0].model
+        self.agent = self.scene.scene.find(
+            '**/agents/agent*/+BulletRigidBodyNode')
+	self.Neck = self.scene.scene.find(
+            '**/agents/agent*/+BulletRigidBodyNode/model*/Neck')
+	self.time = 0
+	
+        if self.cameraTransform is not None:
+            self.camera.setTransform(cameraTransform)
+
+        if cameraMask is not None:
+            self.cam.node().setCameraMask(self.cameraMask)
+        lens = self.cam.node().getLens()
+        lens.setFov(self.fov)
+        lens.setNear(self.zNear)
+        lens.setFar(self.zFar)
+
+        # Change window size
+        wp = WindowProperties()
+        wp.setSize(size[0], size[1])
+        wp.setTitle("Controller")
+        wp.setCursorHidden(True)
+        self.win.requestProperties(wp)
+
+        self.disableMouse()
+
+
+        # Reparent the scene to render.
+        self.scene.scene.reparentTo(self.render)
+
+        self.render.setAntialias(AntialiasAttrib.MAuto)
+
+        # Task definition 
+        self.globalClock = ClockObject.getGlobalClock()
+        self.taskMgr.add(self.update, 'controller-update')
+
+        self._addDefaultLighting()
+        self._setupEvents()
+
+    def _addDefaultLighting(self):
+        alight = AmbientLight('alight')
+        alight.setColor(VBase4(0.2, 0.2, 0.2, 1))
+        alnp = self.render.attachNewNode(alight)
+        self.render.setLight(alnp)
+
+        # NOTE: Point light following the camera
+        plight = PointLight('plight')
+        plight.setColor(VBase4(0.4, 0.4, 0.4, 1))
+        plnp = self.cam.attachNewNode(plight)
+        self.render.setLight(plnp)
+
+        if self.shadowing:
+            # Use a 512x512 resolution shadow map
+            plight.setShadowCaster(True, 512, 512)
+
+            # Enable the shader generator for the receiving nodes
+            self.render.setShaderAuto()
+            self.render.setAntialias(AntialiasAttrib.MAuto)
+
+    def _setupEvents(self):
+
+        self.escapeEventText = OnscreenText(text="ESC: Quit",
+                                            style=1, fg=(1, 1, 1, 1), pos=(-1.3, 0.95),
+                                            align=TextNode.ALeft, scale=.05)
+
+        if self.showPosition:
+            self.positionText = OnscreenText(text="Position: ",
+                                             style=1, fg=(1, 1, 1, 1), pos=(-1.3, 0.85),
+                                             align=TextNode.ALeft, scale=.05)
+
+            self.orientationText = OnscreenText(text="Orientation: ",
+                                                style=1, fg=(1, 1, 1, 1), pos=(-1.3, 0.80),
+                                                align=TextNode.ALeft, scale=.05)
+
+        # Accept the control keys for movement and rotation
+
+        self.accept("escape", sys.exit)
+        
+        self.accept("arrow_left", self.setKey, ["left", True])
+        self.accept("arrow_right", self.setKey, ["right", True])
+        self.accept("arrow_up", self.setKey, ["forward", True])
+        self.accept("arrow_down", self.setKey, ["backward", True])
+        
+        self.accept("arrow_left-up", self.setKey, ["left", False])
+        self.accept("arrow_right-up", self.setKey, ["right", False])
+        self.accept("arrow_up-up", self.setKey, ["forward", False])
+        self.accept("arrow_down-up", self.setKey, ["backward", False])
+        
+        self.accept("a", self.setKey, ["cam-left", True])
+        self.accept("d", self.setKey, ["cam-right", True])        
+        self.accept("a-up", self.setKey, ["cam-left", False])
+        self.accept("d-up", self.setKey, ["cam-right", False])
+        
+        self.accept("j-up", self.setKey, ["head-left", False])
+        self.accept("l-up", self.setKey, ["head-right", False])
+        self.accept("j", self.setKey, ["head-left", True])
+        self.accept("l", self.setKey, ["head-right", True])
+
+    # Records the state of the arrow keys
+    def setKey(self, key, value):
+        self.keyMap[key] = value
+            
+    def update(self, task):
+        # dt = self.globalClock.getDt()
+        dt = task.time - self.time
+
+        linearVelocityX = 0.0
+        linearVelocityY = -0
+        # If the camera-left key is pressed, move camera left.
+        # If the camera-right key is pressed, move camera right.
+	
+
+	   
+        if self.keyMap["cam-left"]:
+            self.camera.setH(self.camera, np.pi/2)
+        if self.keyMap["cam-right"]:
+            self.camera.setH(self.camera, -np.pi/2)
+	
+	# If a move-key is pressed, move ralph in the specified direction.
+
+        if self.keyMap["left"]:
+            self.agent.setH(self.agent.getH() + 300 * dt)
+        if self.keyMap["right"]:
+            self.agent.setH(self.agent.getH() - 300 * dt)
+        if self.keyMap["forward"]:
+            self.agent.setY(self.agent, -dt)
+        if self.keyMap["backward"]:
+            self.agent.setY(self.agent,  dt)
+            
+            
+            
+        # If the head left is press, move ralph's neck to look at the right
+	if self.keyMap["head-left"]:
+	    self.Neck.setP(self.Neck,np.pi/2)
+#	    self.camera.setH(self.camera, np.pi/4)
+	if self.keyMap["head-right"]:
+	    self.Neck.setP(self.Neck, -np.pi/2)
+#	    self.camera.setH(self.camera, -np.pi/4)
+	    
+	
+	currentAnim = self.model.getCurrentAnim()
+
+        if self.keyMap["forward"]:
+            if currentAnim != "run":
+                self.model.loop("run")
+        elif self.keyMap["backward"]:
+            # Play the walk animation backwards.
+            if currentAnim != "walk":
+                self.model.loop("walk")
+            self.model.setPlayRate(-1.0, "walk")
+        elif self.keyMap["left"] or self.keyMap["right"]:
+            if currentAnim != "walk":
+                self.model.loop("walk")
+            self.model.setPlayRate(1.0, "walk")
+        else:
+            if currentAnim is not None:
+                self.model.stop()
+                self.model.pose("walk", 5)
+                self.isMoving = False
+	  
+        if self.showPosition:
+            position = self.agent.getNetTransform().getPos()
+            hpr = self.agent.getNetTransform().getHpr()
+            self.positionText.setText(
+                'Position: (x = %4.2f, y = %4.2f, z = %4.2f)' % (position.x, position.y, position.z))
+            self.orientationText.setText(
+                'Orientation: (h = %4.2f, p = %4.2f, r = %4.2f)' % (hpr.x, hpr.y, hpr.z))
+
+        self.time = task.time
+
+        # Simulate physics
+        if 'physics' in self.scene.worlds:
+            self.scene.worlds['physics'].step(dt)
+
+#         Rendering
+        if 'render' in self.scene.worlds:
+            self.scene.worlds['render'].step(dt)
+
+        # Simulate acoustics
+        if 'acoustics' in self.scene.worlds:
+            self.scene.worlds['acoustics'].step(dt)
+
+        return task.cont
+
+    def step(self):
+        self.taskMgr.step()
+
+    def destroy(self):
+        self.taskMgr.remove('controller-update')
+        
+        ShowBase.destroy(self)
+        # this should only be destroyed by the Python garbage collector
+        # StaticShowBase.instance.destroy()        
+   
