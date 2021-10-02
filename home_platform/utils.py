@@ -547,16 +547,16 @@ class gamer(ShowBase):
         self.accept("arrow_right-up", self.setKey, ["right", False])
         self.accept("arrow_up-up", self.setKey, ["forward", False])
         self.accept("arrow_down-up", self.setKey, ["backward", False])
-        
-        self.accept("a", self.setKey, ["cam-left", True])
-        self.accept("d", self.setKey, ["cam-right", True])        
-        self.accept("a-up", self.setKey, ["cam-left", False])
-        self.accept("d-up", self.setKey, ["cam-right", False])
-        
-        self.accept("j-up", self.setKey, ["head-left", False])
-        self.accept("l-up", self.setKey, ["head-right", False])
-        self.accept("j", self.setKey, ["head-left", True])
-        self.accept("l", self.setKey, ["head-right", True])
+        #This is not quite useful yet
+        self.accept("j", self.setKey, ["cam-left", True])
+        self.accept("l", self.setKey, ["cam-right", True])
+        self.accept("j-up", self.setKey, ["cam-left", False])
+        self.accept("l-up", self.setKey, ["cam-right", False])
+
+        self.accept("a-up", self.setKey, ["head-left", False])
+        self.accept("d-up", self.setKey, ["head-right", False])
+        self.accept("a", self.setKey, ["head-left", True])
+        self.accept("d", self.setKey, ["head-right", True])
 
     # Records the state of the arrow keys
     def setKey(self, key, value):

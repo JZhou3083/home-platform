@@ -1197,10 +1197,7 @@ class RgbRenderer(object):
         self.cameras = []
         for agentNp in self.scene.scene.findAllMatches('**/agents/agent*'):
 #            a=agentNp.getChild(0).getChild(1) ## point it to the Neck
-#            a=agentNp.getChild(0).getChild(0).getChild(1) # point to the eye
-
             a=agentNp
-	    
             camera = a.attachNewNode(ModelNode('camera-rgb'))
 #            if self.cameraTransform is not None:
 #                camera.setTransform(cameraTransform)

@@ -244,13 +244,15 @@ def main():
                                   agentRadius=0.3, agentMode='sphere')
 
     # Configure the camera
+    cam_mode=0 # 0 mode is god view, 1 is First person view
+    viewer = gamer(agents,showPosition=True, cameraMask=renderer.cameraMask,cam_mode=cam_mode)
 
-    viewer = gamer(agents,showPosition=True, cameraMask=renderer.cameraMask)
-
-    transform = TransformState.makePosHpr(LVecBase3f(44.01, -43.95, 15),
+    if cam_mode:
+        transform = TransformState.makePosHpr(LVecBase3f(0,-0.3, 0),
+                                         LVecBase3f(180, 0, 0))
+    else:
+        transform = TransformState.makePosHpr(LVecBase3f(44.01, -43.95, 15),
                                           LVecBase3f(0.0, -81.04, 0.0))
-#    transform = TransformState.makePosHpr(LVecBase3f(0,-0.3 , 0),
-#                                          LVecBase3f(180, 0, 0))  # this is for the first person viewer
     viewer.cam.setTransform(transform)
 
 
@@ -259,7 +261,7 @@ def main():
     # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -41.5, 1.6))
-    agents[0].setPosition((42.5, -39.1, 0.7))
+    agents[0].setPosition((42.5, -39.1, 0))
     agents[0].setOrientation((0,0,0))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -38.5, 1.6))
