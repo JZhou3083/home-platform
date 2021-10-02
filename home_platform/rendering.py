@@ -1196,10 +1196,10 @@ class RgbRenderer(object):
         # Attach a camera to every agent in the scene
         self.cameras = []
         for agentNp in self.scene.scene.findAllMatches('**/agents/agent*'):
-            a=agentNp.getChild(0).getChild(1) ## point it to the Neck
+#            a=agentNp.getChild(0).getChild(1) ## point it to the Neck
 #            a=agentNp.getChild(0).getChild(0).getChild(1) # point to the eye
 
-#             a=agentNp
+            a=agentNp
 	    
             camera = a.attachNewNode(ModelNode('camera-rgb'))
 #            if self.cameraTransform is not None:
@@ -1296,7 +1296,7 @@ class RgbRenderer(object):
             tex.makeRamImage()
             # XXX: should use tex.setMatchFramebufferFormat(True)?
             # agent=camera.getParent() # This is when camer is mounted on agent
-            agent = camera.getParent().getParent().getParent()
+            agent = camera.getParent()
             self.rgbBuffers[agent.getName()] = buf
             self.rgbTextures[agent.getName()] = tex
 

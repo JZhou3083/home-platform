@@ -436,13 +436,13 @@ class Viewer(ShowBase):
             
 class gamer(ShowBase):
     def __init__(self, agents, size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, showPosition=False,
-                 cameraTransform=None, cameraMask=None):
+                 cameraTransform=None,cam_mode=None, cameraMask=None):
 
         ShowBase.__init__(self)
 
         self.__dict__.update(scene=agents[0].scene, size=size, fov=fov,
                              zNear=zNear, zFar=zFar, shadowing=shadowing, showPosition=showPosition,
-                             cameraTransform=cameraTransform, cameraMask=cameraMask)
+                             cameraTransform=cameraTransform, cameraMask=cameraMask,cam_mode=cam_mode)
 	# This is used to store which keys are currently pressed.
         self.keyMap = {
             "left": 0,
@@ -459,12 +459,13 @@ class gamer(ShowBase):
 
 
         # Find agent and reparent camera to it
-        self.model=agents[0].model
+        self.model=agents[0].model # still not able to put in animation of the model
         self.agent = self.scene.scene.find(
             '**/agents/agent*/+BulletRigidBodyNode')
 	self.Neck = self.scene.scene.find(
             '**/agents/agent*/+BulletRigidBodyNode/model*/Neck')
-	self.time = 0
+        if cam_mode:
+            self.camera.reparentTo(self.agent) # FPV camera
 	
         if self.cameraTransform is not None:
             self.camera.setTransform(cameraTransform)
@@ -562,8 +563,8 @@ class gamer(ShowBase):
         self.keyMap[key] = value
             
     def update(self, task):
-        # dt = self.globalClock.getDt()
-        dt = task.time - self.time
+        dt = self.globalClock.getDt()
+
 
         linearVelocityX = 0.0
         linearVelocityY = -0
@@ -593,12 +594,13 @@ class gamer(ShowBase):
         # If the head left is press, move ralph's neck to look at the right
 	if self.keyMap["head-left"]:
 	    self.Neck.setP(self.Neck,np.pi/2)
-#	    self.camera.setH(self.camera, np.pi/4)
+	    if self.cam_mode:
+                self.camera.setH(self.camera, np.pi/2)
 	if self.keyMap["head-right"]:
 	    self.Neck.setP(self.Neck, -np.pi/2)
-#	    self.camera.setH(self.camera, -np.pi/4)
-	    
-	
+            if self.cam_mode:
+                self.camera.setH(self.camera, -np.pi/2)
+    ## This part is for animation but havent worked yet
 	currentAnim = self.model.getCurrentAnim()
 
         if self.keyMap["forward"]:
@@ -618,7 +620,6 @@ class gamer(ShowBase):
                 self.model.stop()
                 self.model.pose("walk", 5)
                 self.isMoving = False
-	  
         if self.showPosition:
             position = self.agent.getNetTransform().getPos()
             hpr = self.agent.getNetTransform().getHpr()
