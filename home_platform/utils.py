@@ -44,7 +44,8 @@ def mat4ToNumpyArray(mat):
                      [mat[1][0], mat[1][1], mat[1][2], mat[1][3]],
                      [mat[2][0], mat[2][1], mat[2][2], mat[2][3]],
                      [mat[3][0], mat[3][1], mat[3][2], mat[3][3]]])
-
+def clamp(i, max):
+    return min(i,max)
 
 def vec3ToNumpyArray(vec):
     return np.array([vec.x, vec.y, vec.z])
@@ -435,12 +436,12 @@ class Viewer(ShowBase):
         # StaticShowBase.instance.destroy()
             
 class gamer(ShowBase):
-    def __init__(self, agents, size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, showPosition=False,
+    def __init__(self, scene, size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, showPosition=False,
                  cameraTransform=None,cam_mode=None, cameraMask=None):
 
         ShowBase.__init__(self)
 
-        self.__dict__.update(scene=agents[0].scene, size=size, fov=fov,
+        self.__dict__.update(scene=scene, size=size, fov=fov,
                              zNear=zNear, zFar=zFar, shadowing=shadowing, showPosition=showPosition,
                              cameraTransform=cameraTransform, cameraMask=cameraMask,cam_mode=cam_mode)
 	# This is used to store which keys are currently pressed.
@@ -449,19 +450,21 @@ class gamer(ShowBase):
             "right": 0,
             "forward": 0,
             "backward": 0,
-            "cam-left": 0,
-            "cam-right": 0,
+            "head-clock": 0,
+            "head-anticlock": 0,
             "head-left": 0,
             "head-right": 0,
-            "camera-shift": 0
+            "head-up": 0,
+            "head-down": 0
 
         }
 
 
         # Find agent and reparent camera to it
-        self.model=agents[0].model # still not able to put in animation of the model
+#        self.model=scene.agents[0]# still not able to put in animation of the model
         self.agent = self.scene.scene.find(
             '**/agents/agent*/+BulletRigidBodyNode')
+        # self.agent=self.scene.agents[0]
 	self.Neck = self.scene.scene.find(
             '**/agents/agent*/+BulletRigidBodyNode/model*/Neck')
         if cam_mode:
@@ -547,16 +550,21 @@ class gamer(ShowBase):
         self.accept("arrow_right-up", self.setKey, ["right", False])
         self.accept("arrow_up-up", self.setKey, ["forward", False])
         self.accept("arrow_down-up", self.setKey, ["backward", False])
-        #This is not quite useful yet
-        self.accept("j", self.setKey, ["cam-left", True])
-        self.accept("l", self.setKey, ["cam-right", True])
-        self.accept("j-up", self.setKey, ["cam-left", False])
-        self.accept("l-up", self.setKey, ["cam-right", False])
+
+        self.accept("w", self.setKey, ["head-up", True])
+        self.accept("s", self.setKey, ["head-down", True])
+        self.accept("w-up", self.setKey, ["head-up", False])
+        self.accept("s-up", self.setKey, ["head-down", False])
 
         self.accept("a-up", self.setKey, ["head-left", False])
         self.accept("d-up", self.setKey, ["head-right", False])
         self.accept("a", self.setKey, ["head-left", True])
         self.accept("d", self.setKey, ["head-right", True])
+        
+        self.accept("q", self.setKey, ["head-anticlock", True])
+        self.accept("e", self.setKey, ["head-clock", True])
+        self.accept("q-up", self.setKey, ["head-anticlock", False])
+        self.accept("e-up", self.setKey, ["head-clock", False])
 
     # Records the state of the arrow keys
     def setKey(self, key, value):
@@ -573,10 +581,47 @@ class gamer(ShowBase):
 	
 
 	   
-        if self.keyMap["cam-left"]:
-            self.camera.setH(self.camera, np.pi/2)
-        if self.keyMap["cam-right"]:
-            self.camera.setH(self.camera, -np.pi/2)
+        if self.keyMap["head-up"]:
+	    if self.cam_mode:
+                self.camera.setP(self.camera.getP()- 70*dt)
+                self.Neck.setH(self.Neck.getH()+ 70*dt)
+            else:
+            	 self.Neck.setH(self.Neck.getH()+ 70*dt)
+        if self.keyMap["head-down"]:            
+            if self.cam_mode:
+                self.camera.setP(self.camera.getP()+ 70*dt)
+                self.Neck.setH(self.Neck.getH()- 70*dt)
+            else:
+            	 self.Neck.setH(self.Neck.getH()- 70*dt)
+            	 
+        # If the head left is press, move ralph's neck to look at the right
+	if self.keyMap["head-left"]:	    
+	    if self.cam_mode:
+                self.camera.setH(self.camera.getH()+70*dt)
+                self.Neck.setP(self.Neck.getP()+70*dt)
+            else:
+            	 self.Neck.setP(self.Neck.getP()+70*dt)
+	if self.keyMap["head-right"]:	    
+            if self.cam_mode:
+                self.camera.setH(self.camera.getH()-70*dt)
+                self.Neck.setP(self.Neck.getP()-70*dt)
+            else:
+            	self.Neck.setP(self.Neck.getP()-70*dt)
+    
+                
+        # head rotate
+        if self.keyMap["head-clock"]:
+	    if self.cam_mode:
+                self.camera.setR(self.camera.getR()- 50*dt)
+                self.Neck.setR(self.Neck.getR()- 50*dt)
+            else:
+            	 self.Neck.setR(self.Neck.getR()- 50*dt)
+        if self.keyMap["head-anticlock"]:            
+            if self.cam_mode:
+                self.camera.setR(self.camera.getR()+ 50*dt)
+                self.Neck.setR(self.Neck.getR()+ 50*dt)
+            else:
+            	 self.Neck.setR(self.Neck.getR()+ 50*dt)
 	
 	# If a move-key is pressed, move ralph in the specified direction.
 
@@ -591,35 +636,27 @@ class gamer(ShowBase):
             
             
             
-        # If the head left is press, move ralph's neck to look at the right
-	if self.keyMap["head-left"]:
-	    self.Neck.setP(self.Neck,np.pi/2)
-	    if self.cam_mode:
-                self.camera.setH(self.camera, np.pi/2)
-	if self.keyMap["head-right"]:
-	    self.Neck.setP(self.Neck, -np.pi/2)
-            if self.cam_mode:
-                self.camera.setH(self.camera, -np.pi/2)
-    ## This part is for animation but havent worked yet
-	currentAnim = self.model.getCurrentAnim()
+        
+#    ## This part is for animation but havent worked yet
+#	currentAnim = self.model.getCurrentAnim()
 
-        if self.keyMap["forward"]:
-            if currentAnim != "run":
-                self.model.loop("run")
-        elif self.keyMap["backward"]:
-            # Play the walk animation backwards.
-            if currentAnim != "walk":
-                self.model.loop("walk")
-            self.model.setPlayRate(-1.0, "walk")
-        elif self.keyMap["left"] or self.keyMap["right"]:
-            if currentAnim != "walk":
-                self.model.loop("walk")
-            self.model.setPlayRate(1.0, "walk")
-        else:
-            if currentAnim is not None:
-                self.model.stop()
-                self.model.pose("walk", 5)
-                self.isMoving = False
+#        if self.keyMap["forward"]:
+#            if currentAnim != "run":
+#                self.model.loop("run")
+#        elif self.keyMap["backward"]:
+#            # Play the walk animation backwards.
+#            if currentAnim != "walk":
+#                self.model.loop("walk")
+#            self.model.setPlayRate(-1.0, "walk")
+#        elif self.keyMap["left"] or self.keyMap["right"]:
+#            if currentAnim != "walk":
+#                self.model.loop("walk")
+#            self.model.setPlayRate(1.0, "walk")
+#        else:
+#            if currentAnim is not None:
+#                self.model.stop()
+#                self.model.pose("walk", 5)
+#                self.isMoving = False
         if self.showPosition:
             position = self.agent.getNetTransform().getPos()
             hpr = self.agent.getNetTransform().getHpr()

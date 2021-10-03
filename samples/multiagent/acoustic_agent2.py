@@ -87,7 +87,7 @@ class Agent(object):
         scene.agents.append(agentNp)
 
         # Define a model
-        modelId = 'sphere-0'
+        modelId = 'Ralph'
         modelFilename = os.path.join(CDIR, 'sphere.egg')
 
 
@@ -227,8 +227,6 @@ def main():
         agent = Agent(scene, 'agent-%d' % (i), agentRadius)
         agents.append(agent)
 
-
-
     # NOTE: specify to move the camera slightly outside the model (not to render the interior of the model)
     #### This's the spot to modify the camera position:
     ## i) How to have two cameras
@@ -245,7 +243,7 @@ def main():
 
     # Configure the camera
     cam_mode=0 # 0 mode is god view, 1 is First person view
-    viewer = gamer(agents,showPosition=True, cameraMask=renderer.cameraMask,cam_mode=cam_mode)
+    viewer = gamer(scene,showPosition=True, cameraMask=renderer.cameraMask,cam_mode=cam_mode)
 
     if cam_mode:
         transform = TransformState.makePosHpr(LVecBase3f(0,-0.3, 0),
@@ -261,7 +259,7 @@ def main():
     # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -41.5, 1.6))
-    agents[0].setPosition((42.5, -39.1, 0))
+    agents[0].setPosition((42.79, -38.68, 0.76))
     agents[0].setOrientation((0,0,0))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -38.5, 1.6))
@@ -287,7 +285,7 @@ def main():
                 observation = {"position": agent.getPosition(),
                                "orientation": agent.getOrientation(),
                                "rgb-image": rgbImage}
-                agent.step(observation)
+                # agent.step(observation)
 
 
     except KeyboardInterrupt:

@@ -80,35 +80,39 @@ class SoundSource(object):
     def __init__(self, scene, modelId, sourceSize=0.25):
         self.scene = scene
         self.modelId = modelId
+
+        # Define a sound source
+        sourceSize = 0.25
+        modelId = 'source-0'
+        modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
+        objectsNp = scene.scene.attachNewNode('objects')
+        objectsNp.setTag('acoustics-mode', 'source')
+        objectNp = objectsNp.attachNewNode('sound-' + modelId)
+        model = loadModel(modelFilename)
+        model.setName('model-' + modelId)
+        model.setTransform(TransformState.makeScale(sourceSize))
+        model.reparentTo(objectNp)
+        objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
+
+        self.objectNp=objectNp
         
 #        modelFilename = os.path.join(CDIR, 'models', 'sphere.egg')
 	
-	# Define a sound source
-#        objectsNp = self.scene.scene.find('**/house*/level*/objects')
-#        soundsNp = objectsNp.attachNewNode('Sounds')
-#	soundsNp = scene.scene.attachNewNode('Sounds')
-#        soundsNp.setTag('acoustics-mode','source')
-#        soundNp=soundsNp.attachNewNode('Source'+self.modelId)
-#        model = loadModel(modelFilename)
-#        model.setName('Radio-'+ modelId)
-#        model.setTransform(TransformState.makeScale(sourceSize))
-#        model.reparentTo(soundNp)
-#        soundNp.setPos(LVecBase3f(41, -40.5, 1.5))
-#        self.soundNp=soundNp
 
-	# Define a sound source
-    	sourceSize = 0.25
-    	modelId = 'source-0'
-    	modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
-    	objectsNp = scene.scene.attachNewNode('Sounds')
-    	objectsNp.setTag('acoustics-mode', 'sources')
-    	objectNp = objectsNp.attachNewNode('Source-' + modelId)
-    	model = loadModel(modelFilename)
-    	model.setName('model-' + modelId)
-    	model.setTransform(TransformState.makeScale(sourceSize))
-    	model.reparentTo(objectNp)
-    	objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
-    	self.objectNp=objectNp
+
+	# # Define a sound source
+    # 	sourceSize = 0.25
+    # 	modelId = 'source-0'
+    # 	modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
+    # 	objectsNp = scene.scene.attachNewNode('Sounds')
+    # 	objectsNp.setTag('acoustics-mode', 'sources')
+    # 	objectNp = objectsNp.attachNewNode('Source-' + modelId)
+    # 	model = loadModel(modelFilename)
+    # 	model.setName('model-' + modelId)
+    # 	model.setTransform(TransformState.makeScale(sourceSize))
+    # 	model.reparentTo(objectNp)
+    # 	objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
+    # 	self.objectNp=objectNp
 
 
 class Agent(object):
@@ -243,8 +247,6 @@ class Agent(object):
                 self.rotationStepCounter = 0
                 self.setAngularVelocity(angularVelocity)
 
-
-
 def main():
 
     # Create scene and remove any default agents
@@ -271,20 +273,6 @@ def main():
     # NOTE: specify to move the camera slightly outside the model (not to render the interior of the model)
     
 #    # Initialize rendering, physics and Evert acoustic
-    samplingRate = 16000.0
-    hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
-                                      'cipic_hrir.mat'), samplingRate)
-    acoustics = EvertAcoustics(
-            scene, hrtf, samplingRate, maximumOrder=2, debug=True)
-
-    # Attach sound to object
-    filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
-    sound = EvertAudioSound(filename)
-    acoustics.attachSoundToObject(sound, source.objectNp)
-    sound.play()
-
-    
-    
     ### Can I do this part in showbase? 
     cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, -3),LVector3f(0, 180, 0))
     renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
@@ -303,8 +291,18 @@ def main():
                                           LVecBase3f(0.0, -81.04, 0.0))
 
     viewer.cam.setTransform(transform)
+    samplingRate = 16000.0
+    hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
+                                      'cipic_hrir.mat'), samplingRate)
+    acoustics = EvertAcoustics(
+            scene, hrtf, samplingRate, maximumOrder=2, debug=True)
 
-   
+    # Attach sound to object
+    filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
+    sound = EvertAudioSound(filename)
+    acoustics.attachSoundToObject(sound, source.objectNp)
+    sound.play()
+
     # Initialize the agent
     # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
@@ -313,6 +311,21 @@ def main():
     agents[0].setOrientation((0,0,0))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -38.5, 1.6))
+
+    # Initialize figure that will show the point-of-view of each agent
+    # plt.ion()
+    # fig = plt.figure(figsize=(12, 4), facecolor='white')
+    # ims = []
+    # for i in range(len(agents)):
+    #     ax = fig.add_subplot(1, len(agents), i + 1)
+    #     ax.set_title(agents[i].agentId)
+    #     ax.axis('off')
+    #     impulse = acoustics.calculateImpulseResponse(
+    #         source.objectNp.getName(), agent.getName())
+    #     im = ax.imshow(impulse)
+    #     ims.append(im)
+    # plt.tight_layout()
+    # plt.show()
 
     # Main loop
     clock = ClockObject.getGlobalClock()
@@ -323,6 +336,9 @@ def main():
             dt = clock.getDt()
             physics.step(dt)
             acoustics.step(dt)
+            impulse = acoustics.calculateImpulseResponse(
+            source.objectNp.getName(), scene.agents[0].getName())
+
 
 
 #            # Update viewer
@@ -345,6 +361,7 @@ def main():
     viewer.destroy()
     renderer.destroy()
     acoustics.destroy()
+    physics.destroy()
 
 
     return 0

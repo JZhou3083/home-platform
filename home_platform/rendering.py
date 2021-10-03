@@ -1299,7 +1299,7 @@ class RgbRenderer(object):
 
     def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
 
-        for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*c'):
+        for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*c'):	
             if showCeilings:
                 np.show(self.cameraMask)
             else:

@@ -949,8 +949,8 @@ class EvertAcoustics(World):
         # taskMgr.add(self.update, 'acoustics', sort=0)
 
     def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
-	for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*c'):
-#        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
+
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
             if showCeilings:
                 np.show(self.cameraMask)
                 print("acoustics mask off")
@@ -958,14 +958,13 @@ class EvertAcoustics(World):
                 np.hide(BitMask32.allOn())
                 print("acoustics mask on")
 
-#        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*w'):
-	for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*w'):
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*w'):
             if showWalls:
                 np.show(self.cameraMask)
             else:
                 np.hide(BitMask32.allOn())
-	for np in self.scene.scene.findAllMatches('**/layouts/**/render-rgb/*f'):
-#        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*f'):
+
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*f'):
             if showFloors:
                 np.show(self.cameraMask)
             else:
@@ -1413,6 +1412,7 @@ class EvertAcoustics(World):
         # Load layout objects as meshes
         for model in self.scene.scene.findAllMatches('**/layouts/object*/model*'):
 
+
             model.getParent().setTag('acoustics-mode', 'obstacle')
 
             coefficients = TextureAbsorptionTable.getMeanAbsorptionCoefficientsFromModel(
@@ -1605,8 +1605,7 @@ class EvertAcoustics(World):
         # NOTE: no need to update position of source, since they are static
         for objName, _ in iteritems(self.sounds):
 
-            obj = self.scene.scene.find('**/Sounds/%s' % (objName))
-            # obj = self.scene.scene.find('**/objects/%s' % (objName))
+            obj = self.scene.scene.find('**/objects/%s' % (objName))
             src = None
             for i in range(self.world.numSources()):
                 source = self.world.getSource(i)
@@ -1757,9 +1756,7 @@ class EvertAcoustics(World):
         # Create new solutions for all pairs of source-listener
         for i in range(self.world.numSources()):
             src = self.world.getSource(i)
-#            obj = self.scene.scene.find('**/objects/%s' % (src.getName()))
-            obj = self.scene.scene.find('**/Sounds/%s' % (src.getName()))
-            print(obj)
+            obj = self.scene.scene.find('**/objects/%s' % (src.getName()))
             sound = self.sounds[src.getName()]
 
             for l in range(self.world.numListeners()):
@@ -1927,7 +1924,6 @@ class EvertAcoustics(World):
                 # simply append as frames to a list?
                 self.outBuffers[agent.getName()] = np.concatenate(
                     (self.outBuffers[agent.getName()], outBuf), axis=-1)
-
 
 class EvertAudioSound(object):
     # Python implementation of AudioSound abstract class:
