@@ -80,20 +80,36 @@ class SoundSource(object):
     def __init__(self, scene, modelId, sourceSize=0.25):
         self.scene = scene
         self.modelId = modelId
-        # modelId='i' # from test code
-        modelFilename = os.path.join(CDIR, 'models', 'sphere.egg')
+        
+#        modelFilename = os.path.join(CDIR, 'models', 'sphere.egg')
 	
-	    # Define a sound source
-        objectsNp = self.scene.scene.find('**/house*/level*/objects')
-        soundsNp = objectsNp.attachNewNode('Sounds')
-        soundsNp.setTag('acoustics-mode','source')
-        soundNp=soundsNp.attachNewNode('Source'+self.modelId)
-        model = loadModel(modelFilename)
-        model.setName('Radio-'+ modelId)
-        model.setTransform(TransformState.makeScale(sourceSize))
-        model.reparentTo(soundNp)
-        soundNp.setPos(LVecBase3f(41, -40.5, 1.5))
-        self.soundNp=soundNp
+	# Define a sound source
+#        objectsNp = self.scene.scene.find('**/house*/level*/objects')
+#        soundsNp = objectsNp.attachNewNode('Sounds')
+#	soundsNp = scene.scene.attachNewNode('Sounds')
+#        soundsNp.setTag('acoustics-mode','source')
+#        soundNp=soundsNp.attachNewNode('Source'+self.modelId)
+#        model = loadModel(modelFilename)
+#        model.setName('Radio-'+ modelId)
+#        model.setTransform(TransformState.makeScale(sourceSize))
+#        model.reparentTo(soundNp)
+#        soundNp.setPos(LVecBase3f(41, -40.5, 1.5))
+#        self.soundNp=soundNp
+
+	# Define a sound source
+    	sourceSize = 0.25
+    	modelId = 'source-0'
+    	modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
+    	objectsNp = scene.scene.attachNewNode('Sounds')
+    	objectsNp.setTag('acoustics-mode', 'sources')
+    	objectNp = objectsNp.attachNewNode('Source-' + modelId)
+    	model = loadModel(modelFilename)
+    	model.setName('model-' + modelId)
+    	model.setTransform(TransformState.makeScale(sourceSize))
+    	model.reparentTo(objectNp)
+    	objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
+    	self.objectNp=objectNp
+
 
 class Agent(object):
 
@@ -247,49 +263,46 @@ def main():
         agent = Agent(scene, 'agent-%d' % (i), agentRadius)
         agents.append(agent)
 
-    # Create multiple sound sources
+#    # Create multiple sound sources
     sources=[]
     for j in range(1):
-    	source=SoundSource(scene,'-%d'%(j))
-    	sources.append(source)
-
-
-
-
-
+   	    source=SoundSource(scene,'-%d'%(j))
+   	    sources.append(source)
     # NOTE: specify to move the camera slightly outside the model (not to render the interior of the model)
-    #### This's the spot to modify the camera position:
-    ## i) How to have two cameras
-    ## ii) How to fix them relatively
+    
+#    # Initialize rendering, physics and Evert acoustic
+    samplingRate = 16000.0
+    hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
+                                      'cipic_hrir.mat'), samplingRate)
+    acoustics = EvertAcoustics(
+            scene, hrtf, samplingRate, maximumOrder=2, debug=True)
+
+    # Attach sound to object
+    filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
+    sound = EvertAudioSound(filename)
+    acoustics.attachSoundToObject(sound, source.objectNp)
+    sound.play()
+
+    
     
     ### Can I do this part in showbase? 
     cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, -3),LVector3f(0, 180, 0))
-
-    # Initialize rendering, physics and Evert acoustic
     renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
     renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
     physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
                                   agentRadius=0.3, agentMode='sphere')
 
     # Configure the camera
-    cam_mode=0 # 0 mode is god view, 1 is First person view
-    viewer = gamer(scene,showPosition=True, cameraMask=renderer.cameraMask,cam_mode=cam_mode)
+    cam_mode = 1 # 0 mode is god view, 1 is First person view
+    viewer = gamer(scene, showPosition=True, cameraMask=BitMask32.bit(0),cam_mode=cam_mode)
     if cam_mode:
         transform = TransformState.makePosHpr(LVecBase3f(0,-0.3, 0),
                                          LVecBase3f(180, 0, 0))
     else:
         transform = TransformState.makePosHpr(LVecBase3f(44.01, -43.95, 15),
                                           LVecBase3f(0.0, -81.04, 0.0))
+
     viewer.cam.setTransform(transform)
-    # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
-    #                                   'cipic_hrir.mat'), samplingRate=16000.0)
-    # acoustics = EvertAcoustics(
-    #         scene, hrtf, samplingRate=16000.0, maximumOrder=2, debug=True)
-    # # Attach sound to object
-    # filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
-    # sound = EvertAudioSound(filename)
-    # acoustics.attachSoundToObject(sound, sources[0].soundNp)
-    # sound.play()
 
    
     # Initialize the agent
@@ -300,7 +313,7 @@ def main():
     agents[0].setOrientation((0,0,0))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -38.5, 1.6))
-    print(scene.scene.ls())
+
     # Main loop
     clock = ClockObject.getGlobalClock()
     try:
@@ -309,6 +322,7 @@ def main():
             # Update physics
             dt = clock.getDt()
             physics.step(dt)
+            acoustics.step(dt)
 
 
 #            # Update viewer
@@ -330,6 +344,7 @@ def main():
         pass
     viewer.destroy()
     renderer.destroy()
+    acoustics.destroy()
 
 
     return 0
