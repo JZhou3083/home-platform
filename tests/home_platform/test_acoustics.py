@@ -33,21 +33,24 @@ import unittest
 import matplotlib.pyplot as plt
 
 from panda3d.core import TransformState, LVecBase3f, LMatrix4f, BitMask32, AudioSound
-
+from panda3d.core import LVector3f, TransformState, ClockObject, LVecBase3f, BitMask32, LVector4f,AudioSound
+from direct.actor.Actor import Actor
 from home_platform.suncg import SunCgSceneLoader, loadModel
 from home_platform.core import Scene
-from home_platform.utils import Viewer
-from home_platform.acoustics import EvertAcoustics, CipicHRTF, FilterBank, \
+from home_platform.utils import Viewer, vec3ToNumpyArray
+from home_platform.acoustics import EvertAcoustics,EvertAcoustics_demon, CipicHRTF, FilterBank, \
     MaterialAbsorptionTable, AirAttenuationTable, EvertAudioSound, AudioPlayer,\
     interauralPolarToVerticalPolarCoordinates,\
     verticalPolarToInterauralPolarCoordinates,\
     verticalPolarToCipicCoordinates
-
+from home_platform.rendering import RgbRenderer
+from home_platform.physics import Panda3dBulletPhysics
 TEST_DATA_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data")
 TEST_SUNCG_DATA_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data", "suncg")
-
+modelpath= os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "..", "data", "models")
 
 class TestMaterialAbsorptionTable(unittest.TestCase):
     def testGetAbsorptionCoefficients(self):
@@ -213,6 +216,7 @@ class TestEvertAcoustics(unittest.TestCase):
         model = loadModel(modelFilename)
         model.setName('model-' + modelId)
         model.setTransform(TransformState.makeScale(sourceSize))
+        model.setColor(LVector4f(0,0,0, 1.0))
         model.reparentTo(objectNp)
         objectNp.setPos(LVecBase3f(0.0, 0.0, 0.0))
 
@@ -260,7 +264,7 @@ class TestEvertAcoustics(unittest.TestCase):
                                   0.25 * roomSize, -0.3 * roomSize))
         for _ in range(10):
             viewer.step()
-        time.sleep(1.0)
+        time.sleep(20.0)
 
         # Calculate and show impulse responses
         impulse = acoustics.calculateImpulseResponse(
@@ -289,7 +293,12 @@ class TestEvertAcoustics(unittest.TestCase):
         acoustics = EvertAcoustics(
             scene, hrtf, samplingRate, maximumOrder=2, debug=True)
 
+
+        # cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, -3),LVector3f(0, 180, 0))
+        # renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
+        # renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
         acoustics.step(0.0)
+
 
         # Hide ceilings
         for nodePath in scene.scene.findAllMatches('**/layouts/*/acoustics/*c'):
@@ -314,16 +323,26 @@ class TestEvertAcoustics(unittest.TestCase):
 
         acoustics.destroy()
         viewer.destroy()
+        # renderer.destroy()
         viewer.graphicsEngine.removeAllWindows()
 
     def testRenderHouseWithAcousticsPath(self):
 
         scene = SunCgSceneLoader.loadHouseFromJson(
             "0004d52d1aeeb8ae6de39d6bd993e992", TEST_SUNCG_DATA_DIR)
-
         agentNp = scene.agents[0]
-        agentNp.setPos(LVecBase3f(45, -42.5, 1.6))
-        agentNp.setHpr(45, 0, 0)
+        model = Actor(os.path.join(modelpath,'eve'),  # Load our animated charachter
+                         {'walk': os.path.join(modelpath,'eve_walk')})
+#        model.setColor(LVector4f(np.random.uniform(), np.random.uniform(), np.random.uniform(), 1.0))
+        model.setColor(LVector4f(0.75,0.70,0.8, 1.0))
+        model.setTransform(TransformState.makeScale(0.15))
+        model.reparentTo(agentNp)
+        agentNp.setPos(LVecBase3f(45, -44, 1.6))
+        # agentNp.setPos(LVecBase3f(40, -41.5, 1.6))
+        # agentNp.setPos(LVecBase3f(42.7891, -39.904, 0.758729))
+        agentNp.setHpr(0, 0, 0)
+        physics = Panda3dBulletPhysics(scene, TEST_SUNCG_DATA_DIR, objectMode='box',
+                                    agentRadius=0.15, agentMode='sphere')
 
         # Define a sound source
         sourceSize = 0.25
@@ -338,24 +357,28 @@ class TestEvertAcoustics(unittest.TestCase):
         model.reparentTo(objectNp)
         objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
 
+
+
         samplingRate = 16000.0
         hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
                                       'cipic_hrir.mat'), samplingRate)
+        microtransform = TransformState.makePos(LVecBase3f(0.15,0, 0),)
         acoustics = EvertAcoustics(
-            scene, hrtf, samplingRate, maximumOrder=2, debug=True)
-
+            scene, hrtf, samplingRate, maximumOrder=2, debug=True,microphoneTransform=microtransform)
         # Attach sound to object
-        filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
+        filename = os.path.join(TEST_DATA_DIR, 'audio', 'radio.ogg')
         sound = EvertAudioSound(filename)
         acoustics.attachSoundToObject(sound, objectNp)
         sound.play()
 
+        cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, 0),LVector3f(0, 180, 0))
+        renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
+        renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
+
         acoustics.step(0.0)
-
         # Hide ceilings
-        for nodePath in scene.scene.findAllMatches('**/layouts/*/acoustics/*c'):
+        for nodePath in scene.scene.findAllMatches('**/layouts/*/physics/acoustics/*c'):
             nodePath.hide(BitMask32.allOn())
-
         viewer = Viewer(scene, interactive=False)
 
         # Configure the camera
@@ -368,26 +391,42 @@ class TestEvertAcoustics(unittest.TestCase):
                         [center.x, center.y, 20, 1]])
         mat = LMatrix4f(*mat.ravel())
         viewer.cam.setMat(mat)
+        # main loop
+        clock = ClockObject.getGlobalClock()
+        try:
+            while True:
 
-        for _ in range(20):
-            viewer.step()
-        time.sleep(1.0)
+                # update physics
+                dt = clock.getDt()
+
+
+                # agentRbNp = agentNp.find('**/+BulletRigidBodyNode')
+                agentNp.setY(agentNp.getY()+0.05*dt)
+                # curPos=vec3ToNumpyArray(agentRbNp.getNetTransform().getPos())
+                # agentRbNp.setY(agentRbNp.getY()+50*dt)
+                physics.step(dt)
+
+                # Update viewer
+                viewer.step()
+        except KeyboardInterrupt:
+            pass
 
         viewer.destroy()
+        physics.destroy()
         viewer.graphicsEngine.removeAllWindows()
 
-        # Calculate and show impulse responses
-        impulse = acoustics.calculateImpulseResponse(
-            objectNp.getName(), agentNp.getName())
-
-        fig = plt.figure()
-        plt.plot(impulse.impulse[0], color='b', label='Left channel')
-        plt.plot(impulse.impulse[1], color='g', label='Right channel')
-        plt.legend()
-        plt.show(block=False)
-        time.sleep(1.0)
-        plt.close(fig)
-
+        # # Calculate and show impulse responses
+        # impulse = acoustics.calculateImpulseResponse(
+        #     objectNp.getName(), agentNp.getName())
+        #
+        # fig = plt.figure()
+        # plt.plot(impulse.impulse[0], color='b', label='Left channel')
+        # plt.plot(impulse.impulse[1], color='g', label='Right channel')
+        # plt.legend()
+        # plt.show(block=False)
+        # time.sleep(10.0)
+        # plt.close(fig)
+        renderer.destroy()
         acoustics.destroy()
 
     def testAttachSoundToObject(self):
@@ -429,7 +468,7 @@ class TestEvertAcoustics(unittest.TestCase):
         samplingRate = 16000.0
         hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
                                       'cipic_hrir.mat'), samplingRate)
-        acoustics = EvertAcoustics(
+        acoustics = EvertAcoustics_demon(
             scene, hrtf, samplingRate, maximumOrder=2, maxBufferLength=30.0)
 
         # Attach sound to object
@@ -535,10 +574,11 @@ class TestEvertAcoustics(unittest.TestCase):
         samplingRate = 16000.0
         hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
                                       'cipic_hrir.mat'), samplingRate)
-        acoustics = EvertAcoustics(
+        acoustics = EvertAcoustics_demon(
             scene, hrtf, samplingRate, maximumOrder=2, maxBufferLength=30.0)
 
-        audioFilenames = ['toilet.ogg', 'radio.ogg']
+        # audioFilenames = ['toilet.ogg', 'radio.ogg']
+        audioFilenames = ['audio.wav','radio.ogg']
         sounds = []
         for audioFilename, source in zip(audioFilenames, sources):
             # Attach sound to object
@@ -580,7 +620,9 @@ class TestEvertAcoustics(unittest.TestCase):
             "0004d52d1aeeb8ae6de39d6bd993e992", TEST_SUNCG_DATA_DIR)
 
         agentNp = scene.agents[0]
-        agentNp.setPos(LVecBase3f(45, -42.5, 1.6))
+        # agentNp.setPos(LVecBase3f(45, -42.5, 1.6))
+        agentNp.setPos(LVecBase3f(39, -40.5, 1.5))
+
         agentNp.setHpr(45, 0, 0)
 
         # Define a sound source
@@ -600,36 +642,37 @@ class TestEvertAcoustics(unittest.TestCase):
         hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
                                       'cipic_hrir.mat'), samplingRate)
         acoustics = EvertAcoustics(
-            scene, hrtf, samplingRate, maximumOrder=2, maxBufferLength=30.0)
+            scene, None, samplingRate, maximumOrder=2, maxBufferLength=30.0)
 
         # Attach sound to object
-        filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
+        filename = os.path.join(TEST_DATA_DIR, 'audio', 'audio.wav')
         sound = EvertAudioSound(filename)
         acoustics.attachSoundToObject(sound, objectNp)
         sound.setLoop(True)
         sound.setLoopCount(1)
 
-        # Add ambient sound
-        filename = os.path.join(TEST_DATA_DIR, 'audio', 'radio.ogg')
-        ambientSound = EvertAudioSound(filename)
-        ambientSound.setLoop(True)
-        ambientSound.setLoopCount(0)
-        ambientSound.setVolume(0.25)
-        acoustics.addAmbientSound(ambientSound)
+        # # Add ambient sound
+        # filename = os.path.join(TEST_DATA_DIR, 'audio', 'radio.ogg')
+        # ambientSound = EvertAudioSound(filename)
+        # ambientSound.setLoop(True)
+        # ambientSound.setLoopCount(0)
+        # ambientSound.setVolume(0.25)
+        # acoustics.addAmbientSound(ambientSound)
 
-        ambientSound.play()
-        acoustics.step(dt=5.0)
+        # ambientSound.play()
+        # acoustics.step(dt=5.0)
         sound.play()
-        acoustics.step(dt=5.0)
+        acoustics.step(dt=7.0)
 
         obs = acoustics.getObservationsForAgent(agentNp.getName())
-        data = np.array([obs['audio-buffer-left'],
-                         obs['audio-buffer-right']], dtype=np.float32).T
-        self.assertTrue(np.allclose(
-            data.shape[0] / samplingRate, 10.0, atol=1e-3))
 
-        # from scipy.io import wavfile
-        # wavfile.write('output.wav', samplingRate, data)
+        data = np.array(obs['audio-buffer-0'],
+                         dtype=np.float32).T
+        self.assertTrue(np.allclose(
+            data.shape[0] / samplingRate, 7.0, atol=1e-3))
+
+        from scipy.io import wavfile
+        wavfile.write('Speech.wav', samplingRate, data)
 
         fig = plt.figure()
         plt.plot(data)

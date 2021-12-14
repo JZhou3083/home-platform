@@ -27,7 +27,7 @@
 # OF SUCH DAMAGE.
 
 import os
-import sys
+import time
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,7 +35,7 @@ import matplotlib.pyplot as plt
 from panda3d.core import LVector3f, TransformState, ClockObject, LVecBase3f, BitMask32, LVector4f,AudioSound
 
 
-from home_platform.utils import gamer, vec3ToNumpyArray
+from home_platform.utils import Viewer, vec3ToNumpyArray
 from home_platform.suncg import SunCgSceneLoader, loadModel
 from home_platform.rendering import RgbRenderer
 from home_platform.physics import Panda3dBulletPhysics
@@ -53,18 +53,19 @@ from direct.showbase.DirectObject import DirectObject
 import sys
 
 
-### These for the audio 
+### These are for the audio
 from home_platform.acoustics import EvertAcoustics, CipicHRTF, FilterBank, \
     MaterialAbsorptionTable, AirAttenuationTable, EvertAudioSound, AudioPlayer,\
     interauralPolarToVerticalPolarCoordinates,\
     verticalPolarToInterauralPolarCoordinates,\
     verticalPolarToCipicCoordinates
-    
-  
+
+
 #####
-CDIR = os.path.dirname(os.path.realpath(__file__)) # loacte thecurrent file path
+CDIR = os.path.dirname(os.path.realpath(__file__)) # loacte the current file path
 TEST_SUNCG_DATA_DIR = os.path.join(CDIR, "..", "..", "tests", "data", "suncg")
 SUNCG_DATA_DIR=TEST_SUNCG_DATA_DIR
+TEST_DATA_DIR = os.path.join(CDIR, "..", "..", "tests", "data")
 #####
 #try:
 #    SUNCG_DATA_DIR = os.environ["SUNCG_DATA_DIR"]
@@ -74,6 +75,7 @@ SUNCG_DATA_DIR=TEST_SUNCG_DATA_DIR
 
 
 logger = logging.getLogger(__name__)
+
 
 class Agent(object):
 
@@ -87,16 +89,14 @@ class Agent(object):
         scene.agents.append(agentNp)
 
         # Define a model
-        modelId = 'Ralph'
+        modelId = 'sphere-0'
         modelFilename = os.path.join(CDIR, 'sphere.egg')
 
 
 
         agentNp.setTag('model-id', modelId)
-
         model = Actor("models/eve",  # Load our animated charachter
                          {'walk': "models/eve_walk"})
-
 #        model.setColor(LVector4f(np.random.uniform(), np.random.uniform(), np.random.uniform(), 1.0))
         model.setColor(LVector4f(0.75,0.70,0.8, 1.0))
         model.setName('model-' + os.path.basename(modelFilename))
@@ -107,8 +107,8 @@ class Agent(object):
         eveNeck=model.controlJoint(None,'modelRoot','Neck')
         eveNeck.setName('Neck')
         eveNeck.hide(BitMask32.allOn())
-        
-        
+
+
         # Calculate the center of this object
         minBounds, maxBounds = model.getTightBounds()
         centerPos = minBounds + (maxBounds - minBounds)
@@ -117,31 +117,26 @@ class Agent(object):
         # Add offset transform to make position relative to the center
         agentNp.setTransform(TransformState.makePos(centerPos))
         model.setTransform(model.getTransform().compose(TransformState.makePos(-centerPos)))
-       
-
-
         self.agentNp = agentNp
         self.model = model
-	self.eveNeck= eveNeck
+        self.eveNeck= eveNeck
         self.agentRbNp = None
-
-
         self.rotationStepCounter = -1
         self.rotationsStepDuration = 40
 
 
     def getName(self):
     	return os.path.basename(os.path.join(CDIR, 'sphere.egg'))
-    	
 
-            
+
+
     def _getAgentNode(self):
         if self.agentRbNp is None:
             agentRbNp = self.agentNp.find('**/+BulletRigidBodyNode')
             if agentRbNp is None:
                 raise Exception(
                     'Unable to find the BulletRigidBodyNode instance related to the agent: the agent should be created before the physic engine!')
-            self.agentRbNp = agentRbNp 	    
+            self.agentRbNp = agentRbNp
         return self.agentRbNp
 
 
@@ -156,11 +151,13 @@ class Agent(object):
     def setPosition(self, position):
         agentRbNp = self._getAgentNode()
         agentRbNp.setPos(LVector3f(position[0], position[1], position[2]))
-
+        self.agentNp.setPos(LVector3f(position[0], position[1], position[2]))
     def setOrientation(self, orientation):
         agentRbNp = self._getAgentNode()
         agentRbNp.setHpr(
             LVector3f(orientation[0], orientation[1], orientation[2]))
+        self.agentNp.setHpr(LVector3f(orientation[0], orientation[1], orientation[2]))
+
 
     def setLinearVelocity(self, linearVelocity):
         # Apply the local transform to the velocity
@@ -177,6 +174,8 @@ class Agent(object):
         agentRbNp.node().setAngularVelocity(
             LVector3f(angularVelocity[0], angularVelocity[1], angularVelocity[2]))
 #        agentRbNp.node().setActive(True, 1)
+
+
     def step(self, observation):
         # TODO: do something useful with the observation
         x, y, z = observation['position']
@@ -206,19 +205,16 @@ class Agent(object):
 
                 self.rotationStepCounter = 0
                 self.setAngularVelocity(angularVelocity)
-
-
-
+# def Turnhead(acoustics,orientation):
+#     microphonetransform=TransformState.makePos(LVector3f(orientation[0], orientation[1] , orientation[2]))
+#     acoustics.microphoneTransform=microphonetransform
 def main():
 
     # Create scene and remove any default agents
     scene = SunCgSceneLoader.loadHouseFromJson(houseId="0004d52d1aeeb8ae6de39d6bd993e992", datasetRoot=SUNCG_DATA_DIR)
     scene.scene.find('**/agents').node().removeAllChildren()
-    # source=Soundsource(scene,"S1")
-    
 
-    
-    ### THis part specify how many agents you need 
+    ### THis part specify how many agents you need
     scene.agents = []
     # Create multiple agents
     agents = []
@@ -227,44 +223,60 @@ def main():
         agent = Agent(scene, 'agent-%d' % (i), agentRadius)
         agents.append(agent)
 
-    # NOTE: specify to move the camera slightly outside the model (not to render the interior of the model)
-    #### This's the spot to modify the camera position:
-    ## i) How to have two cameras
-    ## ii) How to fix them relatively
-    
-    ### Can I do this part in showbase? 
-    cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, -3),LVector3f(0, 180, 0))
-
-    # Initialize rendering and physics
-    renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
-    renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
     physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
                                   agentRadius=0.3, agentMode='sphere')
+    agents[0].setPosition(LVecBase3f(45, -42.5, 1.6))
 
-    # Configure the camera
-    cam_mode=0 # 0 mode is god view, 1 is First person view
-    viewer = gamer(scene,showPosition=True, cameraMask=renderer.cameraMask,cam_mode=cam_mode)
+    # Define a sound source
+    sourceSize = 0.25
+    modelId = 'source-0'
+    modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
+    objectsNp = scene.scene.attachNewNode('objects')
+    objectsNp.setTag('acoustics-mode', 'source')
+    objectNp = objectsNp.attachNewNode('object-' + modelId)
+    model = loadModel(modelFilename)
+    model.setName('model-' + modelId)
+    model.setTransform(TransformState.makeScale(sourceSize))
+    model.reparentTo(objectNp)
+    objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
 
-    if cam_mode:
-        transform = TransformState.makePosHpr(LVecBase3f(0,-0.3, 0),
-                                         LVecBase3f(180, 0, 0))
-    else:
-        # transform = TransformState.makePosHpr(LVecBase3f(44.01, -42.95, 12),
-        #                                   LVecBase3f(0.0, -81.04, 0.0))
-        transform = TransformState.makePosHpr(LVecBase3f(41.31, -39.26, 0.6),
-                                          LVecBase3f(-90, 0, 0.0))
-    viewer.cam.setTransform(transform)
+    samplingRate = 16000.0
+    hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
+                                      'cipic_hrir.mat'), samplingRate)
+    microtransform = TransformState.makePos(LVecBase3f(0.15,0, 0),)
+    acoustics = EvertAcoustics(
+            scene, hrtf, samplingRate, maximumOrder=2, debug=True,microphoneTransform=microtransform)
+    # Attach sound to object
+    filename = os.path.join(TEST_DATA_DIR, 'audio', 'radio.ogg')
+    sound = EvertAudioSound(filename)
+    acoustics.attachSoundToObject(sound, objectNp)
+    sound.play()
 
+    cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, 0),LVector3f(0, 180, 0))
+    renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
+    renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
 
-   
+    acoustics.step(0.0)
+    # Hide ceilings
+    for nodePath in scene.scene.findAllMatches('**/layouts/*/physics/acoustics/*c'):
+        nodePath.hide(BitMask32.allOn())
+    viewer = Viewer(scene, interactive=False)
+    # print(scene.scene.ls())
+    # for nodePath in scene.scene.findAllMatches('**/layouts/*/*/*c'):
+    #     print(nodePath)
+    #     nodePath.hide(BitMask32.allOn())
     # Initialize the agent
-    # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
-    # agents[2].setPosition((42.5, -41.5, 1.6))
-    agents[0].setPosition((42.79, -38.68, -0.5))
+    # agents[2].setPosition((42.5, -41.5, 1.6))   42.7891, -39.904, 0.758729
+    # agents[0].setPosition(LVecBase3f(45, -42.5, 1.6))
+    # agents[0].setPosition((41.18, -39.37, 0.5))
+    # agents[0].agentNp.setPos(LVecBase3f(40, -40.5, 1.5))
+    # agents[0].setPosition((45, -42.5, 0))
     agents[0].setOrientation((0,0,0))
+    # agents[0].eveNeck.setR(180)
     # agents[1].setPosition((42.5, -39, 1.6))
-    # agents[2].setPosition((42.5, -38.5, 1.6))
+    # Turnhead(acoustics,(-0.1,0,0))
+    # Turnhead(acoustics,(-100,0,0))
 
     # Main loop
     clock = ClockObject.getGlobalClock()
@@ -274,7 +286,7 @@ def main():
             # Update physics
             dt = clock.getDt()
             physics.step(dt)
-            
+            acoustics.step(dt)
 
 #            # Update viewer
             viewer.step()
@@ -282,19 +294,19 @@ def main():
                 # Get the current RGB
                 rgbImage = renderer.getRgbImage(
                     agent.agentId, channelOrder="RGB")
-            
+
                 # Get the current observation for the agent
                 observation = {"position": agent.getPosition(),
                                "orientation": agent.getOrientation(),
                                "rgb-image": rgbImage}
-                # agent.step(observation)
+                agent.step(observation)
 
 
     except KeyboardInterrupt:
         pass
     viewer.destroy()
     renderer.destroy()
-
+    physics.destroy()
     return 0
 
 

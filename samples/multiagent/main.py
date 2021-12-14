@@ -27,7 +27,7 @@
 # OF SUCH DAMAGE.
 
 import os
-import sys
+import time
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
@@ -54,7 +54,7 @@ import sys
 
 
 ### These are for the audio 
-from home_platform.acoustics import EvertAcoustics, CipicHRTF, FilterBank, \
+from home_platform.acoustics import EvertAcoustics_JZ, CipicHRTF, FilterBank, \
     MaterialAbsorptionTable, AirAttenuationTable, EvertAudioSound, AudioPlayer,\
     interauralPolarToVerticalPolarCoordinates,\
     verticalPolarToInterauralPolarCoordinates,\
@@ -92,28 +92,11 @@ class SoundSource(object):
         model.setName('model-' + modelId)
         model.setTransform(TransformState.makeScale(sourceSize))
         model.reparentTo(objectNp)
-        objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
+        # objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
 
+        objectNp.setPos(LVecBase3f(41.5, -38.1, 1.5))
         self.objectNp=objectNp
         
-#        modelFilename = os.path.join(CDIR, 'models', 'sphere.egg')
-	
-
-
-	# # Define a sound source
-    # 	sourceSize = 0.25
-    # 	modelId = 'source-0'
-    # 	modelFilename = os.path.join(TEST_DATA_DIR, 'models', 'sphere.egg')
-    # 	objectsNp = scene.scene.attachNewNode('Sounds')
-    # 	objectsNp.setTag('acoustics-mode', 'sources')
-    # 	objectNp = objectsNp.attachNewNode('Source-' + modelId)
-    # 	model = loadModel(modelFilename)
-    # 	model.setName('model-' + modelId)
-    # 	model.setTransform(TransformState.makeScale(sourceSize))
-    # 	model.reparentTo(objectNp)
-    # 	objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
-    # 	self.objectNp=objectNp
-
 
 class Agent(object):
 
@@ -133,10 +116,8 @@ class Agent(object):
 
 
         agentNp.setTag('model-id', modelId)
-
         model = Actor("models/eve",  # Load our animated charachter
                          {'walk': "models/eve_walk"})
-
 #        model.setColor(LVector4f(np.random.uniform(), np.random.uniform(), np.random.uniform(), 1.0))
         model.setColor(LVector4f(0.75,0.70,0.8, 1.0))
         model.setName('model-' + os.path.basename(modelFilename))
@@ -157,15 +138,10 @@ class Agent(object):
         # Add offset transform to make position relative to the center
         agentNp.setTransform(TransformState.makePos(centerPos))
         model.setTransform(model.getTransform().compose(TransformState.makePos(-centerPos)))
-       
-
-
         self.agentNp = agentNp
         self.model = model
-	self.eveNeck= eveNeck
+        self.eveNeck= eveNeck
         self.agentRbNp = None
-
-
         self.rotationStepCounter = -1
         self.rotationsStepDuration = 40
 
@@ -196,11 +172,13 @@ class Agent(object):
     def setPosition(self, position):
         agentRbNp = self._getAgentNode()
         agentRbNp.setPos(LVector3f(position[0], position[1], position[2]))
-
+        self.agentNp.setPos(LVector3f(position[0], position[1], position[2]))
     def setOrientation(self, orientation):
         agentRbNp = self._getAgentNode()
         agentRbNp.setHpr(
             LVector3f(orientation[0], orientation[1], orientation[2]))
+        self.agentNp.setHpr(LVector3f(orientation[0], orientation[1], orientation[2]))
+
 
     def setLinearVelocity(self, linearVelocity):
         # Apply the local transform to the velocity
@@ -217,6 +195,8 @@ class Agent(object):
         agentRbNp.node().setAngularVelocity(
             LVector3f(angularVelocity[0], angularVelocity[1], angularVelocity[2]))
 #        agentRbNp.node().setActive(True, 1)
+
+
     def step(self, observation):
         # TODO: do something useful with the observation
         x, y, z = observation['position']
@@ -246,16 +226,15 @@ class Agent(object):
 
                 self.rotationStepCounter = 0
                 self.setAngularVelocity(angularVelocity)
-
+# def Turnhead(acoustics,orientation):
+#     microphonetransform=TransformState.makePos(LVector3f(orientation[0], orientation[1] , orientation[2]))
+#     acoustics.microphoneTransform=microphonetransform
 def main():
 
     # Create scene and remove any default agents
     scene = SunCgSceneLoader.loadHouseFromJson(houseId="0004d52d1aeeb8ae6de39d6bd993e992", datasetRoot=SUNCG_DATA_DIR)
     scene.scene.find('**/agents').node().removeAllChildren()
 
-    
-
-    
     ### THis part specify how many agents you need 
     scene.agents = []
     # Create multiple agents
@@ -280,52 +259,64 @@ def main():
     physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
                                   agentRadius=0.3, agentMode='sphere')
 
+    # Hide ceilings
+    for nodePath in scene.scene.findAllMatches('**/layouts/**/**/*c/*'):
+        print(nodePath)
+        nodePath.hide(BitMask32.allOn())
     # Configure the camera
-    cam_mode = 1 # 0 mode is god view, 1 is First person view
+    cam_mode = 0 # 0 mode is god view, 1 is First person view
     viewer = gamer(scene, showPosition=True, cameraMask=BitMask32.bit(0),cam_mode=cam_mode)
     if cam_mode:
         transform = TransformState.makePosHpr(LVecBase3f(0,-0.3, 0),
                                          LVecBase3f(180, 0, 0))
     else:
-        transform = TransformState.makePosHpr(LVecBase3f(44.01, -43.95, 15),
+        transform = TransformState.makePosHpr(LVecBase3f(44.01, -43.95, 10),
                                           LVecBase3f(0.0, -81.04, 0.0))
+        # transform = TransformState.makePosHpr(LVecBase3f(42.7891, -41.904, 0.758729),
+        #                                   LVecBase3f(0.0, 0, 0.0))
 
     viewer.cam.setTransform(transform)
     samplingRate = 16000.0
     hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
                                       'cipic_hrir.mat'), samplingRate)
-    acoustics = EvertAcoustics(
-            scene, hrtf, samplingRate, maximumOrder=2, debug=True)
 
+    microphonetransform=TransformState.makePosHpr(LVector3f(-0.1, 0.0, 0),LVector3f(-60, 0.0, 0))
+
+
+    acoustics = EvertAcoustics_JZ(
+            scene, hrtf, samplingRate, maximumOrder=2, maxBufferLength=30.0)
+    acoustics.microphoneTransform = microphonetransform
     # Attach sound to object
     filename = os.path.join(TEST_DATA_DIR, 'audio', 'toilet.ogg')
     sound = EvertAudioSound(filename)
     acoustics.attachSoundToObject(sound, source.objectNp)
     sound.play()
-
+    # print(scene.scene.ls())
+    # for nodePath in scene.scene.findAllMatches('**/layouts/*/*/*c'):
+    #     print(nodePath)
+    #     nodePath.hide(BitMask32.allOn())
     # Initialize the agent
-    # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
-    # agents[2].setPosition((42.5, -41.5, 1.6))
-    agents[0].setPosition((42.5, -39.1, 0))
+    # agents[2].setPosition((42.5, -41.5, 1.6))   42.7891, -39.904, 0.758729
+    agents[0].setPosition((42.7891, -39.904, 0))
+    # agents[0].setPosition((41.18, -39.37, 0.5))
+    # agents[0].agentNp.setPos(LVecBase3f(40, -40.5, 1.5))
+    # agents[0].setPosition((45, -42.5, 0))
     agents[0].setOrientation((0,0,0))
+    # agents[0].eveNeck.setR(180)
     # agents[1].setPosition((42.5, -39, 1.6))
-    # agents[2].setPosition((42.5, -38.5, 1.6))
-
-    # Initialize figure that will show the point-of-view of each agent
-    # plt.ion()
-    # fig = plt.figure(figsize=(12, 4), facecolor='white')
-    # ims = []
-    # for i in range(len(agents)):
-    #     ax = fig.add_subplot(1, len(agents), i + 1)
-    #     ax.set_title(agents[i].agentId)
-    #     ax.axis('off')
-    #     impulse = acoustics.calculateImpulseResponse(
-    #         source.objectNp.getName(), agent.getName())
-    #     im = ax.imshow(impulse)
-    #     ims.append(im)
-    # plt.tight_layout()
-    # plt.show()
+    acoustics.step(0.0)
+    # Turnhead(acoustics,(-0.1,0,0))
+    # Turnhead(acoustics,(-100,0,0))
+    impulse = acoustics.calculateImpulseResponse(
+    source.objectNp.getName(), scene.agents[0].getName())
+    fig = plt.figure()
+    plt.plot(impulse.impulse[0], color='b', label='Left channel')
+    plt.plot(impulse.impulse[1], color='g', label='Right channel')
+    plt.legend()
+    plt.show(block=False)
+    time.sleep(1.0)
+    plt.close(fig)
 
     # Main loop
     clock = ClockObject.getGlobalClock()
@@ -335,35 +326,31 @@ def main():
             # Update physics
             dt = clock.getDt()
             physics.step(dt)
+
             acoustics.step(dt)
-            impulse = acoustics.calculateImpulseResponse(
-            source.objectNp.getName(), scene.agents[0].getName())
-
-
 
 #            # Update viewer
             viewer.step()
-
+            t=t+1
             for i, agent in enumerate(agents):
                 # Get the current RGB
                 rgbImage = renderer.getRgbImage(
                     agent.agentId, channelOrder="RGB")
-            
+
                 # Get the current observation for the agent
                 observation = {"position": agent.getPosition(),
                                "orientation": agent.getOrientation(),
                                "rgb-image": rgbImage}
                 agent.step(observation)
 
+            if t% 150==0:
+                obs =acoustics.getObservationsForAgent(str(scene.agents[0].getName()+"Left"))
 
     except KeyboardInterrupt:
         pass
     viewer.destroy()
     renderer.destroy()
-    acoustics.destroy()
     physics.destroy()
-
-
     return 0
 
 

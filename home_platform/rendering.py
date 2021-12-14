@@ -477,7 +477,6 @@ class Panda3dSemanticsRenderer(World):
         indices = np.arange(len(colors))
         np.random.shuffle(indices)
         colors = colors[indices]
-
         self.catColors = dict()
         for i, name in enumerate(catNames):
             self.catColors[name] = colors[i]
@@ -1199,11 +1198,10 @@ class RgbRenderer(object):
 #            a=agentNp.getChild(0).getChild(1) ## point it to the Neck
             a=agentNp
             camera = a.attachNewNode(ModelNode('camera-rgb'))
-#            if self.cameraTransform is not None:
-#                camera.setTransform(cameraTransform)
-            
-            camera.setPos(0,-0.5,2)
-            camera.setHpr(180,0,0)
+            if self.cameraTransform is not None:
+                camera.setTransform(cameraTransform)
+#            camera.setPos(0,-0.5,2)
+#            camera.setHpr(180,0,0)
             camera.reparentTo(a)
             camera.node().setPreserveTransform(ModelNode.PTLocal)
             self.cameras.append(camera)

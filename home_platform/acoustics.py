@@ -948,7 +948,7 @@ class EvertAcoustics(World):
         self.lastTaskTime = 0.0
         # taskMgr.add(self.update, 'acoustics', sort=0)
 
-    def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
+    def showRoomLayout(self,showCeilings=True,showWalls=True,showFloors=True):
 
         for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
             if showCeilings:
@@ -1295,6 +1295,7 @@ class EvertAcoustics(World):
 
         impulse = self._calculateImpulseResponse(solution, lstName)
 
+
         agentNp = self.scene.scene.find('**/' + lstName)
         microphoneNp = agentNp.find('**/acoustics/microphone*')
         sourceNp = self.scene.scene.find('**/' + srcName)
@@ -1310,6 +1311,7 @@ class EvertAcoustics(World):
         # TODO: Get the source and microphone related to this solution
         agentNp = self.scene.scene.find('**/' + lstName)
         microphoneNp = agentNp.find('**/acoustics/microphone*')
+
 
         if self.hrtf is not None:
             nbChannels = len(self.hrtf.channels)
@@ -1410,8 +1412,8 @@ class EvertAcoustics(World):
     def _initLayoutModels(self):
 
         # Load layout objects as meshes
+        # Poosibly can put in the object as an obstacle
         for model in self.scene.scene.findAllMatches('**/layouts/object*/model*'):
-
 
             model.getParent().setTag('acoustics-mode', 'obstacle')
 
@@ -1436,7 +1438,6 @@ class EvertAcoustics(World):
             acousticModel.setMaterial(material, 1)
             acousticModel.setTextureOff(1)
             acousticModel.setTag('materialId', str(materialId))
-
             parent = objectNp.find('**/physics*')
             if parent.isEmpty():
                 parent = objectNp
@@ -1579,6 +1580,1311 @@ class EvertAcoustics(World):
             for i in range(self.world.numListeners()):
                 listener = self.world.getListener(i)
                 if listener.getName() == str(agent.getName()):
+                    lst = listener
+                    break
+            assert lst is not None
+
+            microphoneNp = agent.find('**/microphone*')
+            netMat = microphoneNp.getNetTransform().getMat()
+            lstNetPos = netMat.getRow3(3)
+            lstNetMat = netMat.getUpper3()
+            lst.setPosition(Vector3(
+                lstNetPos.x * 1000.0, lstNetPos.y * 1000.0, lstNetPos.z * 1000.0))  # m to mm
+            # NOTE Orientation matrix: first column is direction vector, second
+            # column is up vector, third column is right vector
+            lst.setOrientation(Matrix3(lstNetMat.getCell(0, 0), lstNetMat.getCell(2, 0), -lstNetMat.getCell(1, 0),
+                                       lstNetMat.getCell(0, 1), lstNetMat.getCell(
+                                           2, 1), -lstNetMat.getCell(1, 1),
+                                       lstNetMat.getCell(0, 2), lstNetMat.getCell(2, 2), -lstNetMat.getCell(1, 2)))
+
+            logger.debug('Agent %s: microphone at position (x=%f, y=%f, z=%f)' % (
+                agent.getName(), lstNetPos.x, lstNetPos.y, lstNetPos.z))
+
+    def _updateSources(self):
+
+        # NOTE: no need to update position of source, since they are static
+        for objName, _ in iteritems(self.sounds):
+
+            obj = self.scene.scene.find('**/objects/%s' % (objName))
+            src = None
+            for i in range(self.world.numSources()):
+                source = self.world.getSource(i)
+                if source.getName() == str(obj.getName()):
+                    src = source
+                    break
+            assert src is not None
+
+            # Get position and orientation of the static sound source
+            sourceNetTrans = obj.getNetTransform().getMat()
+            sourceNetPos = sourceNetTrans.getRow3(3)
+
+            logger.debug('Static source %s: at position (x=%f, y=%f, z=%f)' % (
+                obj.getName(), sourceNetPos.x, sourceNetPos.y, sourceNetPos.z))
+
+    def step(self, dt):
+
+        if not self.initEvertDone:
+
+            self._initLayoutModels()
+            self._initObjects()
+            self._initAgents()
+
+            self.world.constructBSP() # not in use
+
+            self._initPathSolutions()
+            self.initEvertDone = True
+
+        self._updateSources()
+        self._updateListeners()
+        self._updateSrcBuffers(dt)
+        self._updateOutputBuffers(dt)
+
+        if self.debug:
+            self._updateRenderedAcousticSolutions()
+
+    def update(self, task):
+
+        # Get dt
+        dt = task.time - self.lastTaskTime
+        # dt2 = ClockObject.getGlobalClock().getDt()
+        self.lastTaskTime = task.time
+        assert dt >= 0.0
+
+        if not self.initEvertDone:
+
+            self._initLayoutModels()
+            self._initObjects()
+            self._initAgents()
+
+            self.world.constructBSP()
+
+            self._initPathSolutions()
+            self.initEvertDone = True
+
+        self._updateSources()
+        self._updateListeners()
+        self._updateSrcBuffers(dt)
+        self._updateOutputBuffers(dt)
+
+        if self.debug:
+            self._updateRenderedAcousticSolutions()
+
+        ClockObject.getGlobalClock().tick()
+
+        return task.cont
+
+    def getObservationsForAgent(self, name, clearBuffer=True):
+
+        if self.hrtf is not None:
+            channelNames = self.hrtf.channels
+        else:
+            channelNames = ['0']
+
+        observations = dict()
+        for i, channelName in enumerate(channelNames):
+            observations['audio-buffer-%s' %
+                         (channelName)] = self.outBuffers[name][i, :]
+
+        if clearBuffer:
+            # Clear output buffer
+            self.outBuffers[name] = np.array(
+                [[] for _ in range(self.getNbOutputChannels())])
+
+        return observations
+
+    def addAmbientSound(self, sound):
+        if sound not in self.ambientSounds:
+            self.ambientSounds.append(sound)
+
+            # Allocate a buffer for that sound
+            nbMaxSamples = int(self.maxBufferLength * self.samplingRate)
+            self.srcBuffers[sound] = np.zeros((nbMaxSamples,), np.float32)
+
+    def attachSoundToObject(self, sound, obj):
+        """
+        Sound will come from the location of the object it is attached to
+        """
+
+        if obj.hasTag('physics-mode') and obj.getTag('physics-mode') != 'static':
+            raise Exception('Sources in EVERT must be static!')
+
+        sound.resample(self.samplingRate)
+
+        self.sounds[obj.getName()] = sound
+
+        # Allocate a buffer for that sound
+        nbMaxSamples = int(self.maxBufferLength * self.samplingRate)
+        self.srcBuffers[sound] = np.zeros((nbMaxSamples,), np.float32)
+
+        # Create source in EVERT
+        src = Source()
+        src.setName(obj.getName())
+
+        # Get position and orientation of the static sound source
+        sourceNetTrans = obj.getNetTransform().getMat()
+        sourceNetPos = sourceNetTrans.getRow3(3)
+        sourceNetMat = sourceNetTrans.getUpper3()
+        src.setPosition(
+            Vector3(sourceNetPos.x * 1000.0, sourceNetPos.y * 1000.0, sourceNetPos.z * 1000.0))  # m to mm
+
+        # NOTE Orientation matrix: first column is direction vector, second
+        # column is up vector, third column is right vector
+        src.setOrientation(Matrix3(sourceNetMat.getCell(0, 0), sourceNetMat.getCell(2, 0), -sourceNetMat.getCell(1, 0),
+                                   sourceNetMat.getCell(0, 1), sourceNetMat.getCell(
+                                       2, 1), -sourceNetMat.getCell(1, 1),
+                                   sourceNetMat.getCell(0, 2), sourceNetMat.getCell(2, 2), -sourceNetMat.getCell(1, 2)))
+
+        logger.debug('Static source %s: at position (x=%f, y=%f, z=%f)' % (
+            obj.getName(), sourceNetPos.x, sourceNetPos.y, sourceNetPos.z))
+
+        # Add as source in EVERT
+        self.world.addSource(src)
+
+        # Add acoustic node in scene graph
+        obj.setTag('acoustics-mode', 'source')
+        acousticsNp = obj.attachNewNode('acoustics')
+        if self.debug:
+            # Load model for the sound source
+            acousticModel = self._loadSphereModel(
+                LVector3f(0, 0, 0), radius=0.15, color=(1.0, 0.0, 0.0, 1.0))
+            acousticModel.reparentTo(acousticsNp)
+
+        return 1
+
+    def _initPathSolutions(self):
+
+        # Create new solutions for all pairs of source-listener
+        for i in range(self.world.numSources()):
+            src = self.world.getSource(i)
+            obj = self.scene.scene.find('**/objects/%s' % (src.getName()))
+            sound = self.sounds[src.getName()]
+
+            for l in range(self.world.numListeners()):
+                lst = self.world.getListener(l)
+
+                # WARNING: we have to create the PathSolution instances after adding all sources and listeners,
+                # otherwise it leads to memory errors since sources can be
+                # moved in memory-space.
+                solution = PathSolution(
+                    self.world, src, lst, self.maximumOrder)
+
+                # Force update to pre-compute cache
+                solution.update()
+
+                if lst.getName() not in self.solutions:
+                    self.solutions[lst.getName()] = []
+
+                self.solutions[lst.getName()].append(
+                    (solution, sound, obj.getName()))
+
+    def _updateSrcBuffers(self, dt):
+
+        if dt > 0.0:
+
+            # NOTE: round dt to make sure it equals an non-fractional number of
+            # samples
+            dt = float(int(np.floor(dt * self.samplingRate)) /
+                       self.samplingRate)
+            newDataLength = int(np.round(dt * self.samplingRate))
+
+            # Gather all attached and ambient sounds
+            sounds = []
+            for sound in itervalues(self.sounds):
+                sounds.append(sound)
+            sounds.extend(self.ambientSounds)
+
+            for sound in sounds:
+
+                # TODO: handle isActive() property of sounds
+
+                # Check sound status for updating audio buffer
+                if sound.status() == AudioSound.PLAYING:
+
+                    # Check the current seek position for the sound and get
+                    # data
+                    tStart = sound.t
+                    tEnd = sound.t + dt
+
+                    if tEnd <= sound.length():
+                        # Get the sound data for this timestep
+                        startIdx = int(np.round(tStart * sound.samplingRate))
+                        endIdx = int(np.round(tEnd * sound.samplingRate)) - 1
+                        data = sound.data[startIdx:endIdx + 1]
+                    else:
+                        # Get the sound data for this timestep
+                        startIdx = int(tStart * sound.samplingRate)
+                        data = sound.data[startIdx:]
+
+                        # Pad end with zeros to match desired buffer length
+                        data = np.pad(
+                            data, [(0, newDataLength - len(data))], mode='constant')
+
+                        # Indicates end of play loop
+                        sound.curLoopCount += 1
+                        sound.stop()
+
+                    # Update buffer for sound
+                    assert len(data) == newDataLength
+                    buf = self.srcBuffers[sound]
+                    if newDataLength < len(buf):
+                        # Shift buffer to make place for new data
+                        buf[:len(buf) - len(data)] = buf[len(data):]
+                        buf[len(buf) - len(data):] = data
+                    else:
+                        buf = data[len(data) - len(buf):]
+                    self.srcBuffers[sound] = buf
+
+                    # Update seek position for sound
+                    sound.t += dt
+
+                elif sound.status() == AudioSound.READY:
+
+                    # Update buffer for sound
+                    buf = self.srcBuffers[sound]
+                    data = np.zeros((newDataLength,), dtype=buf.dtype)
+                    if newDataLength < len(buf):
+                        # Shift buffer to make place for new data
+                        buf[:len(buf) - len(data)] = buf[len(data):]
+                        buf[len(buf) - len(data):] = data
+                    else:
+                        buf = data[len(data) - len(buf):]
+                    self.srcBuffers[sound] = buf
+
+                # Handling of loop mode for sounds
+                if sound.status() == AudioSound.READY:
+                    if sound.getLoop():
+                        # Check loop count: 0 = forever; 1 = play once; n =
+                        # play n times
+                        if sound.getLoopCount() > 0:
+                            if sound.curLoopCount < sound.getLoopCount():
+                                # Not yet reach the maximum replay limit
+                                sound.play()
+
+    def _updateOutputBuffers(self, dt):
+
+        if dt > 0.0:
+
+            # Loop for all agent
+            for agent in self.agents:
+
+                # Initialize new output buffer for this timestep
+                # NOTE: round dt to make sure it equals an non-fractional
+                # number of samples
+                dt = float(int(np.floor(dt * self.samplingRate)) /
+                           self.samplingRate)
+                newDataLength = int(np.round(dt * self.samplingRate))
+
+                # FIXME: need to take care of buffer overrun here
+                if dt > self.maxBufferLength + self.maxImpulseLength:
+                    newDataLength = int(
+                        (self.maxBufferLength - self.maxImpulseLength) * self.samplingRate)
+                nbChannels = self.getNbOutputChannels()
+                outBuf = np.zeros(
+                    (nbChannels, newDataLength), dtype=np.float32)
+
+                # Loop for all attached sounds
+                if agent.getName() in self.solutions:
+                    for solution, sound, _ in self.solutions[agent.getName()]:
+
+                        # NOTE: fast update of the solution, since the beam
+                        # tree should already has been pre-computed
+                        solution.update()
+
+                        # Get the impulse response related to this
+                        # source-listener pair
+                        impulse = self._calculateImpulseResponse(
+                            solution, agent.getName())
+
+                        if impulse.shape[-1] > 0:
+
+                            # Get the source buffer related to the sound
+                            buf = self.srcBuffers[sound]
+
+                            # Convolve source with impulse and add contribution
+                            # to output buffer
+                            nbChannels = impulse.shape[0]
+                            nbInSamples = newDataLength + impulse.shape[1] - 1
+                            for channel in range(nbChannels):
+                                outBuf[channel, :] += signal.convolve(
+                                    buf[len(buf) - nbInSamples:], impulse[channel], mode='valid') * sound.getVolume()
+
+                # Loop for all ambient sounds
+                for sound in self.ambientSounds:
+
+                    # Get the source buffer related to the sound
+                    buf = self.srcBuffers[sound]
+
+                    # Add contribution equally to all channels
+                    nbChannels = self.getNbOutputChannels()
+                    nbInSamples = newDataLength
+                    for channel in range(nbChannels):
+                        outBuf[channel,
+                               :] += buf[len(buf) - nbInSamples:] * sound.getVolume()
+
+                # XXX: should we concatenate to create a continuous buffer or
+                # simply append as frames to a list?
+                self.outBuffers[agent.getName()] = np.concatenate(
+                    (self.outBuffers[agent.getName()], outBuf), axis=-1)
+class EvertAudioSound(object):
+    # Python implementation of AudioSound abstract class:
+    # https://www.panda3d.org/reference/1.9.4/python/panda3d.core.AudioSound
+
+    def __init__(self, filename):
+        self.name = os.path.basename(filename)
+        self.filename = filename
+
+        # Load sound from file
+        data, fs = sf.read(filename)
+
+        # Make sure the sound is mono, and keep the first channel only
+        if data.ndim == 2 and data.shape[0] >= 1:
+            data = data[0, :]
+
+        # Normalize in the interval [-1, 1]
+        data = data / np.max(np.abs(data))
+        self.data =data
+        self.samplingRate = fs
+
+        self.reset()
+
+    def reset(self):
+
+        self.t = 0.0
+        self.isActive = True
+        self.isLoop = False
+        self.loopCount = 1
+        self.curLoopCount = 0
+        self.priority = 0
+        self.volume = 1.0
+        self.playRate = 1.0
+        self.balance = 0.0
+        self.curStatus = AudioSound.READY
+
+    def resample(self, newSamplingRate):
+        if self.samplingRate != newSamplingRate:
+            N = self.data.shape[-1]
+            nbSamples = int(N * newSamplingRate / self.samplingRate)
+            self.data = scipy.signal.resample(self.data, nbSamples, axis=-1)
+            self.samplingRate = newSamplingRate
+
+    def configureFilters(self, config):
+        raise NotImplementedError()
+
+    def get3dMaxDistance(self):
+        raise NotImplementedError()
+
+    def get3dMinDistance(self):
+        raise NotImplementedError()
+
+    def getActive(self):
+        return self.isActive
+
+    def getBalance(self):
+        return self.balance
+
+    def getFinishedEvent(self):
+        raise NotImplementedError()
+
+    def getLoop(self):
+        return self.isLoop
+
+    def getLoopCount(self):
+        return self.loopCount
+
+    def getName(self):
+        return self.name
+
+    def getPlayRate(self):
+        return self.playRate
+
+    def getPriority(self):
+        return self.priority
+
+    def getSpeakerLevel(self, index):
+        raise NotImplementedError()
+
+    def getSpeakerMix(self, speaker):
+        raise NotImplementedError()
+
+    def getTime(self):
+        return self.t / self.length()
+
+    def getVolume(self):
+        return self.volume
+
+    def length(self):
+        return len(self.data) / float(self.samplingRate)
+
+    def output(self, out):
+        raise NotImplementedError()
+
+    def play(self):
+        self.curStatus = AudioSound.PLAYING
+
+
+    def set3dAttributes(self, px, py, pz, vx, vy, vz):
+        raise NotImplementedError()
+
+    def set3dMaxDistance(self, dist):
+        raise NotImplementedError()
+
+    def set3dMinDistance(self, dist):
+        raise NotImplementedError()
+
+    def setActive(self, flag):
+        self.isActive = flag
+
+    def setBalance(self, balance_right):
+        raise NotImplementedError()
+
+    def setFinishedEvent(self, event):
+        raise NotImplementedError()
+
+    def setLoop(self, loop):
+        self.isLoop = loop
+
+    def setLoopCount(self, loop_count):
+        self.loopCount = loop_count
+
+    def setPlayRate(self, play_rate):
+        raise NotImplementedError()
+
+    def setPriority(self, priority):
+        self.priority = priority
+
+    def setSpeakerLevels(self, level1, level2, level3, level4, level5,
+                         level6, level7, level8, level9):
+        raise NotImplementedError()
+
+    def setSpeakerMix(self, frontleft, frontright, center, sub, backleft, backright, sideleft, sideright):
+        raise NotImplementedError()
+
+    def setTime(self, start_time):
+        assert start_time >= 0.0 and start_time <= 1.0
+        self.t = start_time * self.length()
+
+    def setVolume(self, volume):
+        self.volume = volume
+
+    def status(self):
+        return self.curStatus
+
+    def stop(self):
+        # Reset seek position to beginning
+        self.t = 0.0
+        self.curStatus = AudioSound.READY
+
+    def write(self, out):
+        raise NotImplementedError()
+
+
+# XXX: use Task chains for multithreading, see
+# https://www.panda3d.org/manual/index.php/Task_Chains
+class AudioPlayer(object):
+
+    def __init__(self, acoustics):
+
+        self.acoustics = acoustics
+
+        import pyaudio
+        from pyaudio import paFloat32
+
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(format=paFloat32,
+                                  channels=acoustics.getNbOutputChannels(),
+                                  rate=int(acoustics.samplingRate),
+                                  output=True)
+
+        # Select default agent
+        self.agentName = self.acoustics.scene.agents[0].getName()
+
+        taskMgr.add(self.update, 'audio-player', sort=1)
+
+        # Get a pointer to Panda's global ClockObject, used for
+        # synchronizing events between Python and C.
+        globalClock = ClockObject.getGlobalClock()
+        globalClock.setMode(ClockObject.MNonRealTime)
+        globalClock.setDt(1)
+
+        # Now we can make the TaskManager start using the new globalClock.
+        taskMgr.globalClock = globalClock
+
+    def _getFrame(self):
+
+        obs = self.acoustics.getObservationsForAgent(self.agentName)
+
+        if 'audio-buffer-left' in obs and 'audio-buffer-right' in obs:
+            data = np.array([obs['audio-buffer-left'],
+                             obs['audio-buffer-right']], dtype=np.float32)
+        elif 'audio-buffer-0' in obs:
+            data = np.array(obs['audio-buffer-0'], dtype=np.float32)
+        else:
+            raise Exception('Unknown channel configuration in observations')
+
+        # Interleave channels if multiple
+        frame = np.empty((data.shape[-1] * data.shape[0],), dtype=data.dtype)
+        for i in range(data.shape[0]):
+            frame[i::data.shape[0]] = data[i, :]
+
+        return frame
+
+    def setListeningToAgent(self, name):
+        self.agentName = name
+
+    def update(self, task):
+
+        data = self._getFrame()
+        self.stream.write(data)
+
+        return task.cont
+
+    def __del__(self):
+        taskMgr.remove('audio-player')
+
+        self.stream.stop_stream()
+        self.stream.close()
+        self.p.terminate()
+
+
+class EvertAcoustics_JZ(World):
+    # NOTE: the model ids of objects that correspond to opened doors. They
+    # will be ignored in the acoustic scene.
+    openedDoorModelIds = [
+        # Doors
+        '122', '133', '214', '246', '247', '361', '73', '756', '757', '758', '759', '760',
+        '761', '762', '763', '764', '765', '768', '769', '770', '771', '778', '779', '780',
+        's__1762', 's__1763', 's__1764', 's__1765', 's__1766', 's__1767', 's__1768', 's__1769',
+        's__1770', 's__1771', 's__1772', 's__1773',
+        # Curtains
+        '275'
+    ]
+
+    rayColors = [
+        (1.0, 1.0, 0.0, 0.2),  # yellow
+        (0.0, 0.0, 1.0, 0.2),  # blue
+        (0.0, 1.0, 0.0, 0.2),  # green
+        (0.0, 1.0, 1.0, 0.2),  # cyan
+        (1.0, 0.0, 1.0, 0.2),  # magenta
+        (1.0, 0.0, 0.0, 0.2),  # red
+    ]
+
+    minRayRadius = 0.01  # m
+    maxRayRadius = 0.1  # m
+
+    def __init__(self, scene, hrtf=None, samplingRate=16000, maximumOrder=3, materialAbsorption=True,
+                 frequencyDependent=True, debug=False,
+                 microphoneTransform=None, objectMode='box', minWidthThresholdPolygons=0.0, maxImpulseLength=1.0,
+                 maxBufferLength=3.0,
+                 threshold=120.0, cameraMask=BitMask32.allOn()):
+
+        super(EvertAcoustics_JZ, self).__init__()
+
+        self.__dict__.update(scene=scene, hrtf=hrtf, samplingRate=samplingRate, maximumOrder=maximumOrder,
+                             materialAbsorption=materialAbsorption,
+                             frequencyDependent=frequencyDependent, debug=debug,
+                             microphoneTransform=microphoneTransform, objectMode=objectMode,
+                             minWidthThresholdPolygons=minWidthThresholdPolygons, maxImpulseLength=maxImpulseLength,
+                             maxBufferLength=maxBufferLength, threshold=threshold, cameraMask=cameraMask)
+
+        self.debug = debug
+        self.samplingRate = samplingRate
+        self.maximumOrder = maximumOrder
+        self.materialAbsorption = materialAbsorption
+        self.frequencyDependent = frequencyDependent
+
+        self.world = EvertRoom()
+        self.solutions = dict()
+        self.render = NodePath('acoustic-render')
+
+        self.sounds = dict()
+        self.srcBuffers = dict()
+        self.outBuffers = dict()
+        self.ambientSounds = []
+
+        self.filterbank = FilterBank(n=257,
+                                     centerFrequencies=MaterialAbsorptionTable.frequencies,
+                                     samplingRate=samplingRate)
+
+        if self.hrtf is not None:
+            self.hrtf.resample(samplingRate)
+
+        self.setAirConditions()
+        self.coefficientsForMaterialId = []
+
+        self.agents = []
+        self.sources = dict()
+        self.acousticImpulseResponses = []
+
+        self.initEvertDone = False
+
+        if self.debug:
+            self._preloadRayModels()
+
+        self.scene.worlds['acoustics'] = self
+
+        self.lastTaskTime = 0.0
+        # taskMgr.add(self.update, 'acoustics', sort=0)
+
+    def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
+
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
+            if showCeilings:
+                np.show(self.cameraMask)
+                print("acoustics mask off")
+            else:
+                np.hide(BitMask32.allOn())
+                print("acoustics mask on")
+
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*w'):
+            if showWalls:
+                np.show(self.cameraMask)
+            else:
+                np.hide(BitMask32.allOn())
+
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*f'):
+            if showFloors:
+                np.show(self.cameraMask)
+            else:
+                np.hide(BitMask32.allOn())
+
+    def destroy(self):
+        # Nothing to do
+        pass
+
+    def getNbOutputChannels(self):
+        if self.hrtf is not None:
+            nbOutputChannels = len(self.hrtf.channels)
+        else:
+            nbOutputChannels = 1
+        return nbOutputChannels
+
+    def visualizeEVERT(self):
+        self._updateSources()
+        self._updateListeners()
+        viewer = EvertViewer(self.world, self.maximumOrder)
+        viewer.show()
+
+    def _loadSphereModel(self, refCenter, radius, color=(1.0, 0.0, 0.0, 1.0)):
+
+        model = loadModel(os.path.join(MODEL_DATA_DIR, 'sphere.egg'))
+
+        # Rescale the cube model to match the bounding box of the original
+        # model
+        minBounds, maxBounds = model.getTightBounds()
+        dims = maxBounds - minBounds
+        pos = model.getPos()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        deltaCenter = center - pos
+
+        position = refCenter - deltaCenter
+        model.setPos(position)
+
+        scale = LVector3f(radius / dims.x, radius / dims.y, radius / dims.z)
+        model.setScale(scale)
+
+        # Validate approximation
+        eps = 1e-4
+        minBounds, maxBounds = model.getTightBounds()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        dims = maxBounds - minBounds
+        assert np.allclose([center.x, center.y, center.z],
+                           [refCenter.x, refCenter.y, refCenter.z],
+                           atol=eps)
+
+        material = Material()
+        material.setAmbient(color)
+        material.setDiffuse(color)
+        model.clearMaterial()
+        model.setMaterial(material, 1)
+
+        return model
+
+    def setAirConditions(self, pressureAtm=1.0, temperature=20.0, relativeHumidity=65.0):
+        self.pressureAtm = pressureAtm
+        self.temperature = temperature
+        self.relativeHumidity = relativeHumidity
+
+    def _calculateSoundSpeed(self):
+        # Approximate speed of sound in dry (0% humidity) air, in meters per second, at temperatures near 0 deg C
+        # TODO: alternative with humidity: http://resource.npl.co.uk/acoustics/techguides/speedair/
+        # See paper: http://asa.scitation.org/doi/pdf/10.1121/1.405827
+        return 331.3 * np.sqrt(1 + self.temperature / 273.15)
+
+    def _calculateDelayAndAttenuation(self, path):
+
+        pathLength = getPathLength(path)
+        delay = pathLength / self._calculateSoundSpeed()
+
+        # Calculate air attenuation coefficient (dB)
+        airAttenuations, frequencies = AirAttenuationTable.getAttenuations(pathLength, self.temperature,
+                                                                           self.relativeHumidity, units='dB')
+
+        # Calculate spherical geometric spreading attenuation (dB)
+        # TODO: should we make sure that sound is never amplified if too near?
+        if pathLength > 0.0:
+            distanceAttenuations = 20.0 * np.log10(1.0 / pathLength)
+        else:
+            distanceAttenuations = 0.0
+
+        # Calculat material attenuation (dB)
+        materialAttenuations = np.zeros(
+            (len(MaterialAbsorptionTable.frequencies),))
+        if self.materialAbsorption:
+            for materialId in getIntersectedMaterialIdsFromPath(path):
+                materialAbsorption = self.coefficientsForMaterialId[materialId]
+                eps = np.finfo(np.float).eps
+                materialAbsorptionDb = 20.0 * \
+                    np.log10(1.0 - materialAbsorption + eps)
+                materialAttenuations += materialAbsorptionDb
+
+        # Total attenuation (dB)
+        attenuation = airAttenuations + distanceAttenuations + materialAttenuations
+        # assert np.all(attenuation < 0.0)
+
+        return delay, attenuation, frequencies
+
+    def _preloadRayModels(self, initialCacheSize=256):
+
+        self.rays = []
+        self.nbUsedRays = 0
+
+        # Load cylinder model and calculate the scaling factor to make the
+        # model unit-norm over the Z axis
+        model = loadModel(os.path.join(MODEL_DATA_DIR, 'cylinder.egg'))
+        minBounds, maxBounds = model.getTightBounds()
+        dims = maxBounds - minBounds
+        self.rayModelZScaling = 1.0 / dims.z
+        model.removeNode()
+
+        self.rayGroupNode = self.scene.scene.attachNewNode('rays')
+
+        self._resizeRayCache(initialCacheSize)
+
+    def _resizeRayCache(self, size):
+
+        if size < len(self.rays):
+            # Remove unused rays from the cache
+            for model in self.rays[size:]:
+                model.detachNode()
+                model.removeNode()
+
+            self.rays = self.rays[:size]
+        else:
+            # Add new rays to the cache
+            for _ in range(size - len(self.rays)):
+                # Load cylinder model
+                model = loadModel(os.path.join(MODEL_DATA_DIR, 'cylinder.egg'))
+                model.clearMaterial()
+                model.reparentTo(self.rayGroupNode)
+                model.hide(BitMask32.allOn())
+
+                self.rays.append(model)
+
+    def _updateRayModelFromEndpoints(self, model, startPt, endPt, radius, color):
+
+        # Clear previous transform
+        model.clearMat()
+
+        # Reference length and center position of ray
+        refLength = np.sqrt((endPt.x - startPt.x) ** 2 +
+                            (endPt.y - startPt.y) ** 2 +
+                            (endPt.z - startPt.z) ** 2)
+        refCenter = (endPt + startPt) / 2.0
+
+        # Change orientation by calculating rotation angles from the endpoints
+        # NOTE: H angle is how the model rotates around the (0, 0, 1) axis,
+        #       P angle how much it rotates around the (1, 0, 0) axis,
+        #       R angle how much it rotates around the (0, 1, 0) axis.
+        normVec = (endPt - startPt) / refLength
+
+        # Rotation around X in the Y-Z plane
+        angle = np.pi / 2 + np.arcsin(-normVec.z)
+        model.setHpr(0.0, angle * 180 / np.pi, 0.0)
+        transAroundX = model.getMat()
+
+        # Rotation around Z in the X-Y plane
+        angle = np.pi / 2 + np.arctan2(normVec.y, normVec.x)
+        model.setHpr(angle * 180 / np.pi, 0.0, 0.0)
+        transAroundZ = model.getMat()
+
+        model.setMat(transAroundX * transAroundZ)
+
+        # Move ray to reference center position
+        minBounds, maxBounds = model.getTightBounds()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        deltaCenter = center - model.getPos()
+        model.setPos(refCenter - deltaCenter)
+
+        # Change radius based on attenuation
+        model.setScale((radius, radius, refLength * self.rayModelZScaling))
+
+        # Change color
+        model.setColor(*color)
+
+    def _calculateAttenuationPerSegment(self, path):
+
+        pts = getIntersectionPointsFromPath(path)
+
+        totalSegAttenuations = np.zeros((len(pts) - 1,))
+        lastPt = pts[0]
+        cumLength = 0.0
+        for i, pt in enumerate(pts[1:]):
+            segLength = np.sqrt((lastPt.x - pt.x) ** 2 +
+                                (lastPt.y - pt.y) ** 2 +
+                                (lastPt.z - pt.z) ** 2)
+            assert segLength > 0.0
+            cumLength += segLength
+
+            # Calculate air attenuation coefficient (dB)
+            airAttenuations, _ = AirAttenuationTable.getAttenuations(cumLength, self.temperature, self.relativeHumidity,
+                                                                     units='dB')
+
+            # Calculate spherical geometric spreading attenuation (dB)
+            distanceAttenuations = 20.0 * np.log10(1.0 / cumLength)
+
+            totalSegAttenuations[i] = np.mean(
+                airAttenuations) + distanceAttenuations
+
+            lastPt = pt
+
+        # Calculate material attenuation (dB)
+        if self.materialAbsorption:
+            for i, materialId in enumerate(getIntersectedMaterialIdsFromPath(path)):
+                materialAbsorption = self.coefficientsForMaterialId[materialId]
+                eps = np.finfo(np.float).eps
+                materialAbsorptionDb = 20.0 * \
+                    np.log10(1.0 - materialAbsorption + eps)
+                totalSegAttenuations[i + 1:] += np.mean(materialAbsorptionDb)
+
+        # assert np.all(totalSegAttenuations < 0.0)
+
+        return totalSegAttenuations
+
+    def _renderAcousticPath(self, path, color):
+
+        totalSegAttenuationsDb = self._calculateAttenuationPerSegment(path)
+
+        pts = getIntersectionPointsFromPath(path)
+        startPt = pts[0]
+        for endPt, attenuationDb in zip(pts[1:], totalSegAttenuationsDb):
+
+            coefficient = 10.0 ** (attenuationDb / 20.0)
+            # assert coefficient >= 0.0 and coefficient <= 1.0
+            radius = np.clip(self.maxRayRadius * coefficient,
+                             a_min=self.minRayRadius, a_max=self.maxRayRadius)
+
+            if self.nbUsedRays < len(self.rays):
+                model = self.rays[self.nbUsedRays]
+                self._updateRayModelFromEndpoints(
+                    model, startPt, endPt, radius, color)
+                model.show(self.cameraMask)
+                self.nbUsedRays += 1
+            else:
+                nextSize = 2 * len(self.rays)
+                logger.debug('Ray cache is full: increasing the size from %d to %d' % (
+                    len(self.rays), nextSize))
+                self._resizeRayCache(nextSize)
+
+            startPt = endPt
+
+    def _updateRenderedAcousticSolutions(self):
+
+        # Reset the number of used rays
+        self.nbUsedRays = 0
+
+        # Loop for all agent
+        # Draw each solution with a different color
+        i = 0
+        for agent in self.agents:
+
+            # Loop for all sounds
+            if agent.getName() in self.solutions:
+                for solution, _, _ in self.solutions[agent.getName()]:
+
+                    # Rotate amongst colors of the predefined table
+                    color = self.rayColors[i % len(self.rayColors)]
+                    i += 1
+
+                    # Sort by increasing path lengh
+                    paths = []
+                    for n in range(solution.numPaths()):
+                        path = solution.getPath(n)
+                        pathLength = getPathLength(path)
+                        paths.append((pathLength, path))
+                    paths.sort(key=lambda x: x[0])
+                    paths = [path for _, path in paths]
+                    logger.debug('Number of paths found for solution %d: %d' % (
+                        i, solution.numPaths()))
+
+                    # Draw each solution path
+                    for path in paths:
+                        self._renderAcousticPath(path, color)
+
+        # Hide all unused rays in the cache
+        for i in range(self.nbUsedRays, len(self.rays)):
+            self.rays[i].hide(BitMask32.allOn())
+
+    def _calculatePathRelativeToMicrophone(self, path, microphoneNp):
+
+        # Get the last segment of the path
+        fromPt = LVecBase3(
+            path.m_points[-2].x, path.m_points[-2].y, path.m_points[-2].z) / 1000.0  # mm to m
+        toPt = LVecBase3(
+            path.m_points[-1].x, path.m_points[-1].y, path.m_points[-1].z) / 1000.0  # mm to m
+        assert np.allclose(vec3ToNumpyArray(toPt),
+                           vec3ToNumpyArray(
+                               microphoneNp.getNetTransform().getPos()),
+                           atol=1e-6)
+
+        srcDirVec = (fromPt - toPt).normalized()
+
+        headTransform = microphoneNp.getNetTransform()
+        headDirVec = headTransform.getNormQuat().getForward(CS_zup_right)
+
+        # XXX: apply a more general calculation of azimut and elevation angles
+        headRollAngle = headTransform.getHpr().getZ()
+        if not np.allclose(headRollAngle, 0.0, atol=1e-6):
+            logger.warn(
+                'Microphone has non-zero roll angle, which is not taken into account!')
+
+        # Get the azimut in X-Y plane
+        srcDirVecXY = LVector3f(srcDirVec.x, srcDirVec.y, 0.0).normalized()
+        headDirVecXY = LVector3f(headDirVec.x, headDirVec.y, 0.0).normalized()
+        azimut = srcDirVecXY.signedAngleRad(
+            headDirVecXY, LVector3f(0.0, 0.0, 1.0))
+
+        # Get the elevation in Y-Z plane
+        srcDirVecYZ = LVector3f(0.0, srcDirVec.y, srcDirVec.z).normalized()
+        headDirVecYZ = LVector3f(0.0, headDirVec.y, headDirVec.z).normalized()
+        elevation = srcDirVecYZ.signedAngleRad(
+            headDirVecYZ, LVector3f(-1.0, 0.0, 0.0))
+
+        return azimut, elevation
+
+    def calculateImpulseResponse(self, srcName, lstName):
+
+        solution = None
+        for sol, _, solSrcName in self.solutions[str(lstName+"Left")]:
+
+            if solSrcName == srcName:
+                solution = sol
+
+                break
+        assert solution is not None
+        impulse = self._calculateImpulseResponse(solution, lstName)
+        agentNp = self.scene.scene.find('**/' + lstName)
+        microphoneNp = agentNp.find('**/acoustics/microphoneL*')
+        sourceNp = self.scene.scene.find('**/' + srcName)
+
+        return AcousticImpulseResponse(impulse, self.samplingRate, sourceNp, microphoneNp)
+
+    def _calculateImpulseResponse(self, solution, lstName):
+
+        # Calculate impulse response in time domain, accounting for frequency-dependent absorption,
+        # then when it is time to convolve with the HRTF, do it in fourrier
+        # domain.
+
+        # TODO: Get the source and microphone related to this solution
+        agentNp = self.scene.scene.find('**/' + lstName)
+        microphoneNp = agentNp.find('**/acoustics/microphone*')
+
+        if self.hrtf is not None:
+            nbChannels = len(self.hrtf.channels)
+        else:
+            nbChannels = 1
+
+        impulse = np.zeros(
+            (nbChannels, int(self.maxImpulseLength * self.samplingRate)))
+
+        realImpulseLength = 0
+        for i in range(solution.numPaths()):
+            path = solution.getPath(i)
+
+            delay, attenuationsDb, _ = self._calculateDelayAndAttenuation(path)
+
+            # Random phase inversion
+            phase = 1.0
+            if np.random.random() > 0.5:
+                phase *= -1
+
+            # Add path impulse to global impulse
+            delaySamples = int(delay * self.samplingRate)
+            # Skip paths that are below attenuation threshold (dB)
+
+            if np.any(abs(attenuationsDb) < self.threshold):
+                if self.hrtf is not None:
+                    # Calculate azimut and elevation angles compared to the
+                    # agent
+                    azimut, elevation = self._calculatePathRelativeToMicrophone(
+                        path, microphoneNp)
+                    hrtfImpulse = self.hrtf.getImpulseResponse(
+                        azimut, elevation)
+
+                if self.frequencyDependent:
+
+                    # Skip paths that would have their impulse responses
+                    # truncated at the end
+                    if delaySamples + self.filterbank.n < impulse.shape[-1]:
+
+                        linearGains = 10.0 ** (attenuationsDb / 20.0)
+                        pathImpulse = self.i.getScaledImpulseResponse(
+                            linearGains)
+
+                        for channel in range(nbChannels):
+
+                            if self.hrtf is not None:
+                                # FIXME: should be using 'full' mode for
+                                # convolution, and flip the hrtf impulse?
+                                pathImpulseChan = signal.fftconvolve(
+                                    pathImpulse, hrtfImpulse[channel], mode='same')
+                            else:
+                                pathImpulseChan = pathImpulse
+
+                            startIdx = int(
+                                delaySamples - self.filterbank.n / 2)
+                            endIdx = startIdx + len(pathImpulseChan) - 1
+                            if startIdx < 0:
+                                trimStartIdx = -startIdx
+                                startIdx = 0
+                            else:
+                                trimStartIdx = 0
+
+                            impulse[channel, startIdx:endIdx +
+                                    1] += phase * pathImpulseChan[trimStartIdx:]
+
+                        if endIdx + 1 > realImpulseLength:
+                            realImpulseLength = endIdx + 1
+                else:
+                    # Use attenuation at 1000 Hz
+                    linearGain = 10.0 ** (attenuationsDb[3] / 20.0)
+
+                    for channel in range(nbChannels):
+
+                        if self.hrtf is not None:
+                            pathImpulseChan = linearGain * hrtfImpulse[channel]
+
+                            # FIXME: should be checking for truncation at the
+                            # beginning and end
+                            startIdx = delaySamples
+                            endIdx = startIdx + len(pathImpulseChan) - 1
+
+                            impulse[channel, startIdx:endIdx +
+                                    1] += phase * pathImpulseChan
+                            if endIdx + 1 > realImpulseLength:
+                                realImpulseLength = endIdx + 1
+
+                        else:
+                            impulse[channel, delaySamples] += phase * \
+                                linearGain
+                            if delaySamples + 1 > realImpulseLength:
+                                realImpulseLength = delaySamples + 1
+
+        # Trim impulse to effective length
+        impulse = impulse[:, :realImpulseLength]
+
+
+        return impulse
+
+    def _initLayoutModels(self):
+
+        # Load layout objects as meshes
+        for model in self.scene.scene.findAllMatches('**/layouts/object*/model*'):
+
+
+            model.getParent().setTag('acoustics-mode', 'obstacle')
+
+            coefficients = TextureAbsorptionTable.getMeanAbsorptionCoefficientsFromModel(
+                model, units='normalized')
+            materialId = len(self.coefficientsForMaterialId)
+            self.coefficientsForMaterialId.append(coefficients)
+
+            acousticModel = getAcousticModelNodeForModel(model, mode='mesh')
+            acousticModel.hide(BitMask32.allOn())
+            acousticModel.show(self.cameraMask)
+
+            objectNp = model.getParent()
+            acousticsNp = objectNp.attachNewNode('acoustics')
+            acousticModel.reparentTo(acousticsNp)
+
+            material = Material()
+            intensity = np.mean(1.0 - coefficients)
+            material.setAmbient((intensity, intensity, intensity, 1))
+            material.setDiffuse((intensity, intensity, intensity, 1))
+            acousticModel.clearMaterial()
+            acousticModel.setMaterial(material, 1)
+            acousticModel.setTextureOff(1)
+            acousticModel.setTag('materialId', str(materialId))
+
+            parent = objectNp.find('**/physics*')
+            if parent.isEmpty():
+                parent = objectNp
+            acousticsNp.reparentTo(parent)
+
+            self._addModelGeometry(acousticModel)
+
+    def _initAgents(self):
+        # Load agents
+        for agent in self.scene.scene.findAllMatches('**/agents/agent*'):
+
+
+            agent.setTag('acoustics-mode', 'listener')
+
+            acousticNode = agent.attachNewNode('acoustics')
+
+            # Load model for the microphone
+            microphoneNpL = acousticNode.attachNewNode('microphoneL')
+            if self.microphoneTransform is not None:
+                microphoneNpL.setTransform(self.microphoneTransform)
+            modelL = self._loadSphereModel(refCenter=LVecBase3(
+                0.0, 0.0, 0.0), radius=0.05, color=(1.0, 0.0, 0.0, 1.0))
+            modelL.reparentTo(microphoneNpL)
+
+
+            ## second model for the second microphone
+            microphoneNpR = acousticNode.attachNewNode('microphoneR')
+
+            if self.microphoneTransform is not None:
+                # self.microphoneTransform.setX(self.microphoneTransform.getX()+0.1)
+                microphoneNpR.setTransform(self.microphoneTransform)
+            modelR = self._loadSphereModel(refCenter=LVecBase3(
+                0.0, 0.0, 0.0), radius=0.05, color=(1.0, 0.0, 0.0, 1.0))
+            modelR.reparentTo(microphoneNpR)
+
+            # Add listeners for EVERT
+            lstL = Listener()
+            lstL.setName(agent.getName()+"Left")
+            lstR = Listener()
+            lstR.setName(agent.getName()+"Right")
+
+            netMatL = microphoneNpL.getNetTransform().getMat()
+            lstNetPosL = netMatL.getRow3(3)
+            lstNetMatL = netMatL.getUpper3()
+            lstL.setPosition(Vector3(
+                lstNetPosL.x * 1000.0, lstNetPosL.y * 1000.0, lstNetPosL.z * 1000.0))  # m to mm
+
+            netMatR = microphoneNpR.getNetTransform().getMat()
+            lstNetPosR = netMatR.getRow3(3)
+            lstNetMatR = netMatR.getUpper3()
+            lstR.setPosition(Vector3(
+                lstNetPosR.x * 1000.0, lstNetPosR.y * 1000.0, lstNetPosR.z * 1000.0))  # m to mm
+
+            # NOTE Orientation matrix: first column is direction vector, second
+            # column is up vector, third column is right vector
+            lstL.setOrientation(Matrix3(lstNetMatL.getCell(0, 0), lstNetMatL.getCell(2, 0), -lstNetMatL.getCell(1, 0),
+                                       lstNetMatL.getCell(0, 1), lstNetMatL.getCell(
+                                           2, 1), -lstNetMatL.getCell(1, 1),
+                                       lstNetMatL.getCell(0, 2), lstNetMatL.getCell(2, 2), -lstNetMatL.getCell(1, 2)))
+
+
+            lstR.setOrientation(Matrix3(lstNetMatR.getCell(0, 0), lstNetMatR.getCell(2, 0), -lstNetMatR.getCell(1, 0),
+                                       lstNetMatR.getCell(0, 1), lstNetMatR.getCell(
+                                           2, 1), -lstNetMatR.getCell(1, 1),
+                                       lstNetMatR.getCell(0, 2), lstNetMatR.getCell(2, 2), -lstNetMatR.getCell(1, 2)))
+
+            self.world.addListener(lstR)
+            self.world.addListener(lstL)
+
+
+
+#            logger.debug('Agent %s: microphone at position (x=%f, y=%f, z=%f)' % (
+#                agent.getName(), lstNetPosL.x, lstNetPosL.y, lstNetPosL.z))
+
+            # Allocate output buffer
+            self.outBuffers[str(agent.getName()+"Left")] = np.array(
+                [[] for _ in range(self.getNbOutputChannels())])
+
+            self.agents.append(agent)
+
+    def _initObjects(self):
+
+        # Load objects
+        for model in self.scene.scene.findAllMatches('**/objects/object*/model*'):
+            modelId = model.getParent().getTag('model-id')
+
+            if modelId in self.openedDoorModelIds:
+                continue
+
+            # Check if object is static
+            isStatic = True
+            if model.hasNetTag('physics-mode'):
+                # Ignore dynamic models
+                if model.getNetTag('physics-mode') == 'dynamic':
+                    isStatic = False
+
+            isObstacle = True
+            if model.hasNetTag('acoustics-mode'):
+                if model.getNetTag('acoustics-mode') != 'obstacle':
+                    isObstacle = False
+
+            if isObstacle and isStatic:
+
+                model.getParent().setTag('acoustics-mode', 'obstacle')
+
+                coefficients = TextureAbsorptionTable.getMeanAbsorptionCoefficientsFromModel(
+                    model, units='normalized')
+                materialId = len(self.coefficientsForMaterialId)
+                self.coefficientsForMaterialId.append(coefficients)
+
+                acousticModel = getAcousticModelNodeForModel(
+                    model, mode=self.objectMode)
+                acousticModel.hide(BitMask32.allOn())
+                acousticModel.show(self.cameraMask)
+
+                objectNp = model.getParent()
+                acousticsNp = objectNp.attachNewNode('acoustics')
+                acousticModel.reparentTo(acousticsNp)
+
+                material = Material()
+                intensity = np.mean(1.0 - coefficients)
+                material.setAmbient((intensity, intensity, intensity, 1))
+                material.setDiffuse((intensity, intensity, intensity, 1))
+                acousticModel.clearMaterial()
+                acousticModel.setMaterial(material, 1)
+                acousticModel.setTextureOff(1)
+                acousticModel.setTag('materialId', str(materialId))
+
+                # NOTE: since the object is static, we don't even need to
+                # reparent the acoustic node under physics
+                parent = objectNp.find('**/physics*')
+                if parent.isEmpty():
+                    parent = objectNp
+                acousticsNp.reparentTo(parent)
+
+                self._addModelGeometry(acousticModel)
+
+    def _addModelGeometry(self, model):
+
+        if model.hasNetTag('physics-mode') and model.getNetTag('physics-mode') != 'static':
+            raise Exception('Obstacles in EVERT must be static!')
+
+        materialId = int(model.getTag('materialId'))
+
+        # Add polygons to EVERT engine
+        # TODO: for bounding box approximations, we could reduce the number of triangles by
+        # half if each face of the box was modelled as a single rectangular
+        # polygon.
+        polygons, triangles = getAcousticPolygonsFromModel(model)
+        for polygon, triangle in zip(polygons, triangles):
+
+            # Validate triangle (ignore if area is too small)
+            dims = np.max(triangle, axis=0) - np.min(triangle, axis=0)
+            s = np.sum(
+                np.array(dims > self.minWidthThresholdPolygons, dtype=np.int))
+            if s < 2:
+                continue
+
+            polygon.setMaterialId(materialId)
+            self.world.addPolygon(polygon, Vector3(1.0, 1.0, 1.0))
+
+    def _updateListeners(self):
+
+        # Update positions of listeners
+        for agent in self.agents:
+
+            lst = None
+            for i in range(self.world.numListeners()):
+                listener = self.world.getListener(i)
+                if listener.getName() == str(agent.getName()+"Left"):
                     lst = listener
                     break
             assert lst is not None
@@ -1754,6 +3060,7 @@ class EvertAcoustics(World):
     def _initPathSolutions(self):
 
         # Create new solutions for all pairs of source-listener
+
         for i in range(self.world.numSources()):
             src = self.world.getSource(i)
             obj = self.scene.scene.find('**/objects/%s' % (src.getName()))
@@ -1762,12 +3069,12 @@ class EvertAcoustics(World):
             for l in range(self.world.numListeners()):
                 lst = self.world.getListener(l)
 
+
                 # WARNING: we have to create the PathSolution instances after adding all sources and listeners,
                 # otherwise it leads to memory errors since sources can be
                 # moved in memory-space.
                 solution = PathSolution(
                     self.world, src, lst, self.maximumOrder)
-
                 # Force update to pre-compute cache
                 solution.update()
 
@@ -1923,224 +3230,1169 @@ class EvertAcoustics(World):
                 # XXX: should we concatenate to create a continuous buffer or
                 # simply append as frames to a list?
                 self.outBuffers[agent.getName()] = np.concatenate(
-                    (self.outBuffers[agent.getName()], outBuf), axis=-1)
+                    (self.outBuffers[str(agent.getName()+"Left")], outBuf), axis=-1)
+class EvertAcoustics_demon(World):
+    # NOTE: the model ids of objects that correspond to opened doors. They
+    # will be ignored in the acoustic scene.
+    openedDoorModelIds = [
+        # Doors
+        '122', '133', '214', '246', '247', '361', '73', '756', '757', '758', '759', '760',
+        '761', '762', '763', '764', '765', '768', '769', '770', '771', '778', '779', '780',
+        's__1762', 's__1763', 's__1764', 's__1765', 's__1766', 's__1767', 's__1768', 's__1769',
+        's__1770', 's__1771', 's__1772', 's__1773',
+        # Curtains
+        '275'
+    ]
 
-class EvertAudioSound(object):
-    # Python implementation of AudioSound abstract class:
-    # https://www.panda3d.org/reference/1.9.4/python/panda3d.core.AudioSound
+    rayColors = [
+        (1.0, 1.0, 0.0, 0.2),  # yellow
+        (0.0, 0.0, 1.0, 0.2),  # blue
+        (0.0, 1.0, 0.0, 0.2),  # green
+        (0.0, 1.0, 1.0, 0.2),  # cyan
+        (1.0, 0.0, 1.0, 0.2),  # magenta
+        (1.0, 0.0, 0.0, 0.2),  # red
+    ]
 
-    def __init__(self, filename):
-        self.name = os.path.basename(filename)
-        self.filename = filename
+    minRayRadius = 0.01  # m
+    maxRayRadius = 0.1  # m
 
-        # Load sound from file
-        data, fs = sf.read(filename)
+    def __init__(self, scene, hrtf=None, samplingRate=16000, maximumOrder=3, materialAbsorption=True,
+                 frequencyDependent=True, debug=False,
+                 microphoneTransformL=None, microphoneTransformR=None,objectMode='box', minWidthThresholdPolygons=0.0, maxImpulseLength=1.0,
+                 maxBufferLength=3.0,
+                 threshold=120.0, cameraMask=BitMask32.allOn()):
 
-        # Make sure the sound is mono, and keep the first channel only
-        if data.ndim == 2 and data.shape[0] >= 1:
-            data = data[0, :]
+        super(EvertAcoustics_demon, self).__init__()
 
-        # Normalize in the interval [-1, 1]
-        data = data / np.max(np.abs(data))
+        self.__dict__.update(scene=scene, hrtf=hrtf, samplingRate=samplingRate, maximumOrder=maximumOrder,
+                             materialAbsorption=materialAbsorption,
+                             frequencyDependent=frequencyDependent, debug=debug,
+                             microphoneTransformL=microphoneTransformL, microphoneTransformR=microphoneTransformR,objectMode=objectMode,
+                             minWidthThresholdPolygons=minWidthThresholdPolygons, maxImpulseLength=maxImpulseLength,
+                             maxBufferLength=maxBufferLength, threshold=threshold, cameraMask=cameraMask)
 
-        self.data = data
-        self.samplingRate = fs
+        self.debug = debug
+        self.samplingRate = samplingRate
+        self.maximumOrder = maximumOrder
+        self.materialAbsorption = materialAbsorption
+        self.frequencyDependent = frequencyDependent
 
-        self.reset()
+        self.world = EvertRoom()
+        self.solutions = dict()
+        self.render = NodePath('acoustic-render')
 
-    def reset(self):
+        self.sounds = dict()
+        self.srcBuffers = dict()
+        self.outBuffers = dict()
+        self.ambientSounds = []
 
-        self.t = 0.0
-        self.isActive = True
-        self.isLoop = False
-        self.loopCount = 1
-        self.curLoopCount = 0
-        self.priority = 0
-        self.volume = 1.0
-        self.playRate = 1.0
-        self.balance = 0.0
-        self.curStatus = AudioSound.READY
+        self.filterbank = FilterBank(n=257,
+                                     centerFrequencies=MaterialAbsorptionTable.frequencies,
+                                     samplingRate=samplingRate)
 
-    def resample(self, newSamplingRate):
-        if self.samplingRate != newSamplingRate:
-            N = self.data.shape[-1]
-            nbSamples = int(N * newSamplingRate / self.samplingRate)
-            self.data = scipy.signal.resample(self.data, nbSamples, axis=-1)
-            self.samplingRate = newSamplingRate
+        if self.hrtf is not None:
+            self.hrtf.resample(samplingRate)
 
-    def configureFilters(self, config):
-        raise NotImplementedError()
+        self.setAirConditions()
+        self.coefficientsForMaterialId = []
 
-    def get3dMaxDistance(self):
-        raise NotImplementedError()
+        self.agents = []
+        self.sources = dict()
+        self.acousticImpulseResponses = []
 
-    def get3dMinDistance(self):
-        raise NotImplementedError()
+        self.initEvertDone = False
 
-    def getActive(self):
-        return self.isActive
+        if self.debug:
+            self._preloadRayModels()
 
-    def getBalance(self):
-        return self.balance
+        self.scene.worlds['acoustics'] = self
 
-    def getFinishedEvent(self):
-        raise NotImplementedError()
+        self.lastTaskTime = 0.0
+        # taskMgr.add(self.update, 'acoustics', sort=0)
 
-    def getLoop(self):
-        return self.isLoop
+    def showRoomLayout(self,showCeilings=True,showWalls=True,showFloors=True):
 
-    def getLoopCount(self):
-        return self.loopCount
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
+            if showCeilings:
+                np.show(self.cameraMask)
+                print("acoustics mask off")
+            else:
+                np.hide(BitMask32.allOn())
+                print("acoustics mask on")
 
-    def getName(self):
-        return self.name
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*w'):
+            if showWalls:
+                np.show(self.cameraMask)
+            else:
+                np.hide(BitMask32.allOn())
 
-    def getPlayRate(self):
-        return self.playRate
+        for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*f'):
+            if showFloors:
+                np.show(self.cameraMask)
+            else:
+                np.hide(BitMask32.allOn())
 
-    def getPriority(self):
-        return self.priority
+    def destroy(self):
+        # Nothing to do
+        pass
 
-    def getSpeakerLevel(self, index):
-        raise NotImplementedError()
-
-    def getSpeakerMix(self, speaker):
-        raise NotImplementedError()
-
-    def getTime(self):
-        return self.t / self.length()
-
-    def getVolume(self):
-        return self.volume
-
-    def length(self):
-        return len(self.data) / float(self.samplingRate)
-
-    def output(self, out):
-        raise NotImplementedError()
-
-    def play(self):
-        self.curStatus = AudioSound.PLAYING
-
-    def set3dAttributes(self, px, py, pz, vx, vy, vz):
-        raise NotImplementedError()
-
-    def set3dMaxDistance(self, dist):
-        raise NotImplementedError()
-
-    def set3dMinDistance(self, dist):
-        raise NotImplementedError()
-
-    def setActive(self, flag):
-        self.isActive = flag
-
-    def setBalance(self, balance_right):
-        raise NotImplementedError()
-
-    def setFinishedEvent(self, event):
-        raise NotImplementedError()
-
-    def setLoop(self, loop):
-        self.isLoop = loop
-
-    def setLoopCount(self, loop_count):
-        self.loopCount = loop_count
-
-    def setPlayRate(self, play_rate):
-        raise NotImplementedError()
-
-    def setPriority(self, priority):
-        self.priority = priority
-
-    def setSpeakerLevels(self, level1, level2, level3, level4, level5,
-                         level6, level7, level8, level9):
-        raise NotImplementedError()
-
-    def setSpeakerMix(self, frontleft, frontright, center, sub, backleft, backright, sideleft, sideright):
-        raise NotImplementedError()
-
-    def setTime(self, start_time):
-        assert start_time >= 0.0 and start_time <= 1.0
-        self.t = start_time * self.length()
-
-    def setVolume(self, volume):
-        self.volume = volume
-
-    def status(self):
-        return self.curStatus
-
-    def stop(self):
-        # Reset seek position to beginning
-        self.t = 0.0
-        self.curStatus = AudioSound.READY
-
-    def write(self, out):
-        raise NotImplementedError()
-
-
-# XXX: use Task chains for multithreading, see
-# https://www.panda3d.org/manual/index.php/Task_Chains
-class AudioPlayer(object):
-
-    def __init__(self, acoustics):
-
-        self.acoustics = acoustics
-
-        import pyaudio
-        from pyaudio import paFloat32
-
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=paFloat32,
-                                  channels=acoustics.getNbOutputChannels(),
-                                  rate=int(acoustics.samplingRate),
-                                  output=True)
-
-        # Select default agent
-        self.agentName = self.acoustics.scene.agents[0].getName()
-
-        taskMgr.add(self.update, 'audio-player', sort=1)
-
-        # Get a pointer to Panda's global ClockObject, used for
-        # synchronizing events between Python and C.
-        globalClock = ClockObject.getGlobalClock()
-        globalClock.setMode(ClockObject.MNonRealTime)
-        globalClock.setDt(1.0)
-
-        # Now we can make the TaskManager start using the new globalClock.
-        taskMgr.globalClock = globalClock
-
-    def _getFrame(self):
-
-        obs = self.acoustics.getObservationsForAgent(self.agentName)
-
-        if 'audio-buffer-left' in obs and 'audio-buffer-right' in obs:
-            data = np.array([obs['audio-buffer-left'],
-                             obs['audio-buffer-right']], dtype=np.float32)
-        elif 'audio-buffer-0' in obs:
-            data = np.array(obs['audio-buffer-0'], dtype=np.float32)
+    def getNbOutputChannels(self):
+        if self.hrtf is not None:
+            nbOutputChannels = len(self.hrtf.channels)
         else:
-            raise Exception('Unknown channel configuration in observations')
+            nbOutputChannels = 2
+        return nbOutputChannels
 
-        # Interleave channels if multiple
-        frame = np.empty((data.shape[-1] * data.shape[0],), dtype=data.dtype)
-        for i in range(data.shape[0]):
-            frame[i::data.shape[0]] = data[i, :]
+    def visualizeEVERT(self):
+        self._updateSources()
+        self._updateListeners()
+        viewer = EvertViewer(self.world, self.maximumOrder)
+        viewer.show()
 
-        return frame
+    def _loadSphereModel(self, refCenter, radius, color=(1.0, 0.0, 0.0, 1.0)):
 
-    def setListeningToAgent(self, name):
-        self.agentName = name
+        model = loadModel(os.path.join(MODEL_DATA_DIR, 'sphere.egg'))
+
+        # Rescale the cube model to match the bounding box of the original
+        # model
+        minBounds, maxBounds = model.getTightBounds()
+        dims = maxBounds - minBounds
+        pos = model.getPos()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        deltaCenter = center - pos
+
+        position = refCenter - deltaCenter
+        model.setPos(position)
+
+        scale = LVector3f(radius / dims.x, radius / dims.y, radius / dims.z)
+        model.setScale(scale)
+
+        # Validate approximation
+        eps = 1e-4
+        minBounds, maxBounds = model.getTightBounds()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        dims = maxBounds - minBounds
+        assert np.allclose([center.x, center.y, center.z],
+                           [refCenter.x, refCenter.y, refCenter.z],
+                           atol=eps)
+
+        material = Material()
+        material.setAmbient(color)
+        material.setDiffuse(color)
+        model.clearMaterial()
+        model.setMaterial(material, 1)
+
+        return model
+
+    def setAirConditions(self, pressureAtm=1.0, temperature=20.0, relativeHumidity=65.0):
+        self.pressureAtm = pressureAtm
+        self.temperature = temperature
+        self.relativeHumidity = relativeHumidity
+
+    def _calculateSoundSpeed(self):
+        # Approximate speed of sound in dry (0% humidity) air, in meters per second, at temperatures near 0 deg C
+        # TODO: alternative with humidity: http://resource.npl.co.uk/acoustics/techguides/speedair/
+        # See paper: http://asa.scitation.org/doi/pdf/10.1121/1.405827
+        return 331.3 * np.sqrt(1 + self.temperature / 273.15)
+
+    def _calculateDelayAndAttenuation(self, path):
+
+        pathLength = getPathLength(path)
+        delay = pathLength / self._calculateSoundSpeed()
+
+        # Calculate air attenuation coefficient (dB)
+        airAttenuations, frequencies = AirAttenuationTable.getAttenuations(pathLength, self.temperature,
+                                                                           self.relativeHumidity, units='dB')
+
+        # Calculate spherical geometric spreading attenuation (dB)
+        # TODO: should we make sure that sound is never amplified if too near?
+        if pathLength > 0.0:
+            distanceAttenuations = 20.0 * np.log10(1.0 / pathLength)
+        else:
+            distanceAttenuations = 0.0
+
+        # Calculat material attenuation (dB)
+        materialAttenuations = np.zeros(
+            (len(MaterialAbsorptionTable.frequencies),))
+        if self.materialAbsorption:
+            for materialId in getIntersectedMaterialIdsFromPath(path):
+                materialAbsorption = self.coefficientsForMaterialId[materialId]
+                eps = np.finfo(np.float).eps
+                materialAbsorptionDb = 20.0 * \
+                    np.log10(1.0 - materialAbsorption + eps)
+                materialAttenuations += materialAbsorptionDb
+
+        # Total attenuation (dB)
+        attenuation = airAttenuations + distanceAttenuations + materialAttenuations
+        # assert np.all(attenuation < 0.0)
+
+        return delay, attenuation, frequencies
+
+    def _preloadRayModels(self, initialCacheSize=256):
+
+        self.rays = []
+        self.nbUsedRays = 0
+
+        # Load cylinder model and calculate the scaling factor to make the
+        # model unit-norm over the Z axis
+        model = loadModel(os.path.join(MODEL_DATA_DIR, 'cylinder.egg'))
+        minBounds, maxBounds = model.getTightBounds()
+        dims = maxBounds - minBounds
+        self.rayModelZScaling = 1.0 / dims.z
+        model.removeNode()
+
+        self.rayGroupNode = self.scene.scene.attachNewNode('rays')
+
+        self._resizeRayCache(initialCacheSize)
+
+    def _resizeRayCache(self, size):
+
+        if size < len(self.rays):
+            # Remove unused rays from the cache
+            for model in self.rays[size:]:
+                model.detachNode()
+                model.removeNode()
+
+            self.rays = self.rays[:size]
+        else:
+            # Add new rays to the cache
+            for _ in range(size - len(self.rays)):
+                # Load cylinder model
+                model = loadModel(os.path.join(MODEL_DATA_DIR, 'cylinder.egg'))
+                model.clearMaterial()
+                model.reparentTo(self.rayGroupNode)
+                model.hide(BitMask32.allOn())
+
+                self.rays.append(model)
+
+    def _updateRayModelFromEndpoints(self, model, startPt, endPt, radius, color):
+
+        # Clear previous transform
+        model.clearMat()
+
+        # Reference length and center position of ray
+        refLength = np.sqrt((endPt.x - startPt.x) ** 2 +
+                            (endPt.y - startPt.y) ** 2 +
+                            (endPt.z - startPt.z) ** 2)
+        refCenter = (endPt + startPt) / 2.0
+
+        # Change orientation by calculating rotation angles from the endpoints
+        # NOTE: H angle is how the model rotates around the (0, 0, 1) axis,
+        #       P angle how much it rotates around the (1, 0, 0) axis,
+        #       R angle how much it rotates around the (0, 1, 0) axis.
+        normVec = (endPt - startPt) / refLength
+
+        # Rotation around X in the Y-Z plane
+        angle = np.pi / 2 + np.arcsin(-normVec.z)
+        model.setHpr(0.0, angle * 180 / np.pi, 0.0)
+        transAroundX = model.getMat()
+
+        # Rotation around Z in the X-Y plane
+        angle = np.pi / 2 + np.arctan2(normVec.y, normVec.x)
+        model.setHpr(angle * 180 / np.pi, 0.0, 0.0)
+        transAroundZ = model.getMat()
+
+        model.setMat(transAroundX * transAroundZ)
+
+        # Move ray to reference center position
+        minBounds, maxBounds = model.getTightBounds()
+        center = minBounds + (maxBounds - minBounds) / 2.0
+        deltaCenter = center - model.getPos()
+        model.setPos(refCenter - deltaCenter)
+
+        # Change radius based on attenuation
+        model.setScale((radius, radius, refLength * self.rayModelZScaling))
+
+        # Change color
+        model.setColor(*color)
+
+    def _calculateAttenuationPerSegment(self, path):
+
+        pts = getIntersectionPointsFromPath(path)
+
+        totalSegAttenuations = np.zeros((len(pts) - 1,))
+        lastPt = pts[0]
+        cumLength = 0.0
+        for i, pt in enumerate(pts[1:]):
+            segLength = np.sqrt((lastPt.x - pt.x) ** 2 +
+                                (lastPt.y - pt.y) ** 2 +
+                                (lastPt.z - pt.z) ** 2)
+            assert segLength > 0.0
+            cumLength += segLength
+
+            # Calculate air attenuation coefficient (dB)
+            airAttenuations, _ = AirAttenuationTable.getAttenuations(cumLength, self.temperature, self.relativeHumidity,
+                                                                     units='dB')
+
+            # Calculate spherical geometric spreading attenuation (dB)
+            distanceAttenuations = 20.0 * np.log10(1.0 / cumLength)
+
+            totalSegAttenuations[i] = np.mean(
+                airAttenuations) + distanceAttenuations
+
+            lastPt = pt
+
+        # Calculate material attenuation (dB)
+        if self.materialAbsorption:
+            for i, materialId in enumerate(getIntersectedMaterialIdsFromPath(path)):
+                materialAbsorption = self.coefficientsForMaterialId[materialId]
+                eps = np.finfo(np.float).eps
+                materialAbsorptionDb = 20.0 * \
+                    np.log10(1.0 - materialAbsorption + eps)
+                totalSegAttenuations[i + 1:] += np.mean(materialAbsorptionDb)
+
+        # assert np.all(totalSegAttenuations < 0.0)
+
+        return totalSegAttenuations
+
+    def _renderAcousticPath(self, path, color):
+
+        totalSegAttenuationsDb = self._calculateAttenuationPerSegment(path)
+
+        pts = getIntersectionPointsFromPath(path)
+        startPt = pts[0]
+        for endPt, attenuationDb in zip(pts[1:], totalSegAttenuationsDb):
+
+            coefficient = 10.0 ** (attenuationDb / 20.0)
+            # assert coefficient >= 0.0 and coefficient <= 1.0
+            radius = np.clip(self.maxRayRadius * coefficient,
+                             a_min=self.minRayRadius, a_max=self.maxRayRadius)
+
+            if self.nbUsedRays < len(self.rays):
+                model = self.rays[self.nbUsedRays]
+                self._updateRayModelFromEndpoints(
+                    model, startPt, endPt, radius, color)
+                model.show(self.cameraMask)
+                self.nbUsedRays += 1
+            else:
+                nextSize = 2 * len(self.rays)
+                logger.debug('Ray cache is full: increasing the size from %d to %d' % (
+                    len(self.rays), nextSize))
+                self._resizeRayCache(nextSize)
+
+            startPt = endPt
+
+    def _updateRenderedAcousticSolutions(self):
+
+        # Reset the number of used rays
+        self.nbUsedRays = 0
+
+        # Loop for all agent
+        # Draw each solution with a different color
+        i = 0
+
+        for agent in self.agents:
+
+            # Loop for all sounds
+
+            if str(agent.getName()+'left') in self.solutions:
+                for solution, _, _ in self.solutions[str(agent.getName()+'left')]:
+
+                    # Rotate amongst colors of the predefined table
+                    color = self.rayColors[i % len(self.rayColors)]
+                    i += 1
+
+                    # Sort by increasing path lengh
+                    paths = []
+                    for n in range(solution.numPaths()):
+                        path = solution.getPath(n)
+                        pathLength = getPathLength(path)
+                        paths.append((pathLength, path))
+                    paths.sort(key=lambda x: x[0])
+                    paths = [path for _, path in paths]
+                    logger.debug('Number of paths found for solution %d: %d' % (
+                        i, solution.numPaths()))
+
+                    # Draw each solution path
+                    for path in paths:
+                        self._renderAcousticPath(path, color)
+
+            if str(agent.getName()+'right') in self.solutions:
+                for solution, _, _ in self.solutions[str(agent.getName()+'right')]:
+
+                    # Rotate amongst colors of the predefined table
+                    color = self.rayColors[i % len(self.rayColors)]
+                    i += 1
+
+                    # Sort by increasing path lengh
+                    paths = []
+                    for n in range(solution.numPaths()):
+                        path = solution.getPath(n)
+                        pathLength = getPathLength(path)
+                        paths.append((pathLength, path))
+                    paths.sort(key=lambda x: x[0])
+                    paths = [path for _, path in paths]
+                    logger.debug('Number of paths found for solution %d: %d' % (
+                        i, solution.numPaths()))
+
+                    # Draw each solution path
+                    for path in paths:
+                        self._renderAcousticPath(path, color)
+
+        # Hide all unused rays in the cache
+        for i in range(self.nbUsedRays, len(self.rays)):
+            self.rays[i].hide(BitMask32.allOn())
+
+    def _calculatePathRelativeToMicrophone(self, path, microphoneNp):
+
+        # Get the last segment of the path
+        fromPt = LVecBase3(
+            path.m_points[-2].x, path.m_points[-2].y, path.m_points[-2].z) / 1000.0  # mm to m
+        toPt = LVecBase3(
+            path.m_points[-1].x, path.m_points[-1].y, path.m_points[-1].z) / 1000.0  # mm to m
+        # assert np.allclose(vec3ToNumpyArray(toPt),
+        #                    vec3ToNumpyArray(
+        #                        microphoneNp.getNetTransform().getPos()),
+        #                    atol=1e-6)
+
+        srcDirVec = (fromPt - toPt).normalized()
+
+        headTransform = microphoneNp.getNetTransform()
+        headDirVec = headTransform.getNormQuat().getForward(CS_zup_right)
+
+        # XXX: apply a more general calculation of azimut and elevation angles
+        headRollAngle = headTransform.getHpr().getZ()
+        if not np.allclose(headRollAngle, 0.0, atol=1e-6):
+            logger.warn(
+                'Microphone has non-zero roll angle, which is not taken into account!')
+
+        # Get the azimut in X-Y plane
+        srcDirVecXY = LVector3f(srcDirVec.x, srcDirVec.y, 0.0).normalized()
+        headDirVecXY = LVector3f(headDirVec.x, headDirVec.y, 0.0).normalized()
+        azimut = srcDirVecXY.signedAngleRad(
+            headDirVecXY, LVector3f(0.0, 0.0, 1.0))
+
+        # Get the elevation in Y-Z plane
+        srcDirVecYZ = LVector3f(0.0, srcDirVec.y, srcDirVec.z).normalized()
+        headDirVecYZ = LVector3f(0.0, headDirVec.y, headDirVec.z).normalized()
+        elevation = srcDirVecYZ.signedAngleRad(
+            headDirVecYZ, LVector3f(-1.0, 0.0, 0.0))
+
+        return azimut, elevation
+
+    def calculateImpulseResponse(self, srcName, agentName):
+
+        solution = None
+        for sol, _, solSrcName in self.solutions[str(agentName+'left')]:
+            if solSrcName == srcName:
+                solution = sol
+                break
+        assert solution is not None
+        impulseL = self._calculateImpulseResponse(solution, str(agentName+'left'))
+
+        for sol, _, solSrcName in self.solutions[str(agentName+'right')]:
+            if solSrcName == srcName:
+                solution = sol
+                break
+        assert solution is not None
+        impulseR = self._calculateImpulseResponse(solution, str(agentName+'right'))
+
+        impulse = [impulseL[0],impulseR[0]]
+        agentNp = self.scene.scene.find('**/' + agentName)
+        microphoneNp = agentNp.find('**/acoustics/microphoneL')
+        sourceNp = self.scene.scene.find('**/' + srcName)
+
+        return AcousticImpulseResponse(impulse, self.samplingRate, sourceNp, microphoneNp)
+
+    def _calculateImpulseResponse(self, solution, lstName):
+
+        # Calculate impulse response in time domain, accounting for frequency-dependent absorption,
+        # then when it is time to convolve with the HRTF, do it in fourrier
+        # domain.
+
+        # TODO: Get the source and microphone related to this solution
+        agentNp = self.scene.scene.find('**/' + lstName)
+        microphoneNp = agentNp.find('**/acoustics/microphone*')
+
+
+        if self.hrtf is not None:
+            nbChannels = len(self.hrtf.channels)
+        else:
+            nbChannels = 1
+
+        impulse = np.zeros(
+            (nbChannels, int(self.maxImpulseLength * self.samplingRate)))
+        realImpulseLength = 0
+        for i in range(solution.numPaths()):
+            path = solution.getPath(i)
+
+            delay, attenuationsDb, _ = self._calculateDelayAndAttenuation(path)
+
+            # Random phase inversion
+            phase = 1.0
+            if np.random.random() > 0.5:
+                phase *= -1
+
+            # Add path impulse to global impulse
+            delaySamples = int(delay * self.samplingRate)
+
+            # Skip paths that are below attenuation threshold (dB)
+            if np.any(abs(attenuationsDb) < self.threshold):
+
+                if self.hrtf is not None:
+                    # Calculate azimut and elevation angles compared to the
+                    # agent
+                    azimut, elevation = self._calculatePathRelativeToMicrophone(
+                        path, microphoneNp)
+                    hrtfImpulse = self.hrtf.getImpulseResponse(
+                        azimut, elevation)
+
+                if self.frequencyDependent:
+
+                    # Skip paths that would have their impulse responses
+                    # truncated at the end
+                    if delaySamples + self.filterbank.n < impulse.shape[-1]:
+
+                        linearGains = 10.0 ** (attenuationsDb / 20.0)
+                        pathImpulse = self.filterbank.getScaledImpulseResponse(
+                            linearGains)
+
+                        for channel in range(nbChannels):
+
+                            if self.hrtf is not None:
+                                # FIXME: should be using 'full' mode for
+                                # convolution, and flip the hrtf impulse?
+                                pathImpulseChan = signal.fftconvolve(
+                                    pathImpulse, hrtfImpulse[channel], mode='same')
+                            else:
+                                pathImpulseChan = pathImpulse
+
+                            startIdx = int(
+                                delaySamples - self.filterbank.n / 2)
+                            endIdx = startIdx + len(pathImpulseChan) - 1
+                            if startIdx < 0:
+                                trimStartIdx = -startIdx
+                                startIdx = 0
+                            else:
+                                trimStartIdx = 0
+
+                            impulse[channel, startIdx:endIdx +
+                                    1] += phase * pathImpulseChan[trimStartIdx:]
+
+                        if endIdx + 1 > realImpulseLength:
+                            realImpulseLength = endIdx + 1
+                else:
+                    # Use attenuation at 1000 Hz
+                    linearGain = 10.0 ** (attenuationsDb[3] / 20.0)
+
+                    for channel in range(nbChannels):
+
+                        if self.hrtf is not None:
+                            pathImpulseChan = linearGain * hrtfImpulse[channel]
+
+                            # FIXME: should be checking for truncation at the
+                            # beginning and end
+                            startIdx = delaySamples
+                            endIdx = startIdx + len(pathImpulseChan) - 1
+
+                            impulse[channel, startIdx:endIdx +
+                                    1] += phase * pathImpulseChan
+                            if endIdx + 1 > realImpulseLength:
+                                realImpulseLength = endIdx + 1
+
+                        else:
+                            impulse[channel, delaySamples] += phase * \
+                                linearGain
+                            if delaySamples + 1 > realImpulseLength:
+                                realImpulseLength = delaySamples + 1
+
+        # Trim impulse to effective length
+        impulse = impulse[:, :realImpulseLength]
+
+        return impulse
+
+    def _initLayoutModels(self):
+
+        # Load layout objects as meshes
+        # Poosibly can put in the object as an obstacle
+        for model in self.scene.scene.findAllMatches('**/layouts/object*/model*'):
+
+            model.getParent().setTag('acoustics-mode', 'obstacle')
+
+            coefficients = TextureAbsorptionTable.getMeanAbsorptionCoefficientsFromModel(
+                model, units='normalized')
+            materialId = len(self.coefficientsForMaterialId)
+            self.coefficientsForMaterialId.append(coefficients)
+
+            acousticModel = getAcousticModelNodeForModel(model, mode='mesh')
+            acousticModel.hide(BitMask32.allOn())
+            acousticModel.show(self.cameraMask)
+
+            objectNp = model.getParent()
+            acousticsNp = objectNp.attachNewNode('acoustics')
+            acousticModel.reparentTo(acousticsNp)
+
+            material = Material()
+            intensity = np.mean(1.0 - coefficients)
+            material.setAmbient((intensity, intensity, intensity, 1))
+            material.setDiffuse((intensity, intensity, intensity, 1))
+            acousticModel.clearMaterial()
+            acousticModel.setMaterial(material, 1)
+            acousticModel.setTextureOff(1)
+            acousticModel.setTag('materialId', str(materialId))
+            parent = objectNp.find('**/physics*')
+            if parent.isEmpty():
+                parent = objectNp
+            acousticsNp.reparentTo(parent)
+
+            self._addModelGeometry(acousticModel)
+
+    def _initAgents(self):
+
+        # Load agents
+        for agent in self.scene.scene.findAllMatches('**/agents/agent*'):
+
+            agent.setTag('acoustics-mode', 'listener')
+
+            acousticNode = agent.attachNewNode('acoustics')
+            if self.hrtf is not None:
+
+                # Load model for the microphone
+                microphoneNp = acousticNode.attachNewNode('microphone')
+                if self.microphoneTransformL is not None:
+                    microphoneNp.setTransform(self.microphoneTransformL)
+                model = self._loadSphereModel(refCenter=LVecBase3(
+                0.0, 0.0, 0.0), radius=0.15, color=(1.0, 0.0, 0.0, 1.0))
+                model.reparentTo(microphoneNp)
+
+                # Add listeners for EVERT
+                lst = Listener()
+                lst.setName(agent.getName())
+
+                netMat = microphoneNp.getNetTransform().getMat()
+                lstNetPos = netMat.getRow3(3)
+                lstNetMat = netMat.getUpper3()
+                lst.setPosition(Vector3(
+                    lstNetPos.x * 1000.0, lstNetPos.y * 1000.0, lstNetPos.z * 1000.0))  # m to mm
+
+                # NOTE Orientation matrix: first column is direction vector, second
+                # column is up vector, third column is right vector
+                lst.setOrientation(Matrix3(lstNetMat.getCell(0, 0), lstNetMat.getCell(2, 0), -lstNetMat.getCell(1, 0),
+                                       lstNetMat.getCell(0, 1), lstNetMat.getCell(
+                                           2, 1), -lstNetMat.getCell(1, 1),
+                                       lstNetMat.getCell(0, 2), lstNetMat.getCell(2, 2), -lstNetMat.getCell(1, 2)))
+
+                self.world.addListener(lst)
+
+                logger.debug('Agent %s: microphone at position (x=%f, y=%f, z=%f)' % (
+                    agent.getName(), lstNetPos.x, lstNetPos.y, lstNetPos.z))
+
+                # Allocate output buffer
+                self.outBuffers[agent.getName()] = np.array(
+                    [[] for _ in range(self.getNbOutputChannels())])
+            else:
+                microphoneNp_left = acousticNode.attachNewNode('microphoneL')
+                microphoneNp_right = acousticNode.attachNewNode('microphoneR')
+                if self.microphoneTransformL is not None:
+                    microphoneNp_left.setTransform(self.microphoneTransformL)
+                if self.microphoneTransformR is not None:
+                    microphoneNp_right.setTransform(self.microphoneTransformR)
+
+                model_l = self._loadSphereModel(refCenter=LVecBase3(
+                    0.0, 0.0, 0.0), radius=0.15, color=(1.0, 0.0, 0.0, 1.0))
+                model_l.reparentTo(microphoneNp_left)
+
+                model_r = self._loadSphereModel(refCenter=LVecBase3(
+                    0.0, 0.0, 0.0), radius=0.15, color=(1.0, 0.0, 0.0, 1.0))
+                model_r.reparentTo(microphoneNp_right)
+
+                # Add  left ear listeners for EVERT
+                lst_l = Listener()
+                lst_l.setName(agent.getName()+'left')
+
+                netMat_l = microphoneNp_left.getNetTransform().getMat()
+                lstNetPos_l = netMat_l.getRow3(3)
+                lstNetMat_l = netMat_l.getUpper3()
+                lst_l.setPosition(Vector3(
+                    lstNetPos_l.x * 1000.0, lstNetPos_l.y * 1000.0, lstNetPos_l.z * 1000.0))  # m to mm
+
+                # NOTE Orientation matrix: first column is direction vector, second
+                # column is up vector, third column is right vector
+                lst_l.setOrientation(Matrix3(lstNetMat_l.getCell(0, 0), lstNetMat_l.getCell(2, 0), -lstNetMat_l.getCell(1, 0),
+                                       lstNetMat_l.getCell(0, 1), lstNetMat_l.getCell(
+                                           2, 1), -lstNetMat_l.getCell(1, 1),
+                                       lstNetMat_l.getCell(0, 2), lstNetMat_l.getCell(2, 2), -lstNetMat_l.getCell(1, 2)))
+
+                self.world.addListener(lst_l)
+
+                logger.debug('Agent %s: microphoneL at position (x=%f, y=%f, z=%f)' % (
+                    agent.getName(), lstNetPos_l.x, lstNetPos_l.y, lstNetPos_l.z))
+
+
+
+                # Add right ear listeners for EVERT
+                lst_r = Listener()
+                lst_r.setName(agent.getName()+'right')
+
+                netMat_r = microphoneNp_right.getNetTransform().getMat()
+                lstNetPos_r = netMat_r.getRow3(3)
+                lstNetMat_r = netMat_r.getUpper3()
+                lst_r.setPosition(Vector3(
+                    lstNetPos_r.x * 1000.0, lstNetPos_r.y * 1000.0, lstNetPos_r.z * 1000.0))  # m to mm
+
+                # NOTE Orientation matrix: first column is direction vector, second
+                # column is up vector, third column is right vector
+                lst_r.setOrientation(Matrix3(lstNetMat_r.getCell(0, 0), lstNetMat_r.getCell(2, 0), -lstNetMat_r.getCell(1, 0),
+                                       lstNetMat_r.getCell(0, 1), lstNetMat_r.getCell(
+                                           2, 1), -lstNetMat_r.getCell(1, 1),
+                                       lstNetMat_r.getCell(0, 2), lstNetMat_r.getCell(2, 2), -lstNetMat_r.getCell(1, 2)))
+
+                self.world.addListener(lst_r)
+
+
+                # Allocate output buffer
+                self.outBuffers[agent.getName()] = np.array(
+                    [[] for _ in range(self.getNbOutputChannels())])
+            self.agents.append(agent)
+
+    def _initObjects(self):
+
+        # Load objects
+        for model in self.scene.scene.findAllMatches('**/objects/object*/model*'):
+            modelId = model.getParent().getTag('model-id')
+
+            if modelId in self.openedDoorModelIds:
+                continue
+
+            # Check if object is static
+            isStatic = True
+            if model.hasNetTag('physics-mode'):
+                # Ignore dynamic models
+                if model.getNetTag('physics-mode') == 'dynamic':
+                    isStatic = False
+
+            isObstacle = True
+            if model.hasNetTag('acoustics-mode'):
+                if model.getNetTag('acoustics-mode') != 'obstacle':
+                    isObstacle = False
+
+            if isObstacle and isStatic:
+
+                model.getParent().setTag('acoustics-mode', 'obstacle')
+
+                coefficients = TextureAbsorptionTable.getMeanAbsorptionCoefficientsFromModel(
+                    model, units='normalized')
+                materialId = len(self.coefficientsForMaterialId)
+                self.coefficientsForMaterialId.append(coefficients)
+
+                acousticModel = getAcousticModelNodeForModel(
+                    model, mode=self.objectMode)
+                acousticModel.hide(BitMask32.allOn())
+                acousticModel.show(self.cameraMask)
+
+                objectNp = model.getParent()
+                acousticsNp = objectNp.attachNewNode('acoustics')
+                acousticModel.reparentTo(acousticsNp)
+
+                material = Material()
+                intensity = np.mean(1.0 - coefficients)
+                material.setAmbient((intensity, intensity, intensity, 1))
+                material.setDiffuse((intensity, intensity, intensity, 1))
+                acousticModel.clearMaterial()
+                acousticModel.setMaterial(material, 1)
+                acousticModel.setTextureOff(1)
+                acousticModel.setTag('materialId', str(materialId))
+
+                # NOTE: since the object is static, we don't even need to
+                # reparent the acoustic node under physics
+                parent = objectNp.find('**/physics*')
+                if parent.isEmpty():
+                    parent = objectNp
+                acousticsNp.reparentTo(parent)
+
+                self._addModelGeometry(acousticModel)
+
+    def _addModelGeometry(self, model):
+
+        if model.hasNetTag('physics-mode') and model.getNetTag('physics-mode') != 'static':
+            raise Exception('Obstacles in EVERT must be static!')
+
+        materialId = int(model.getTag('materialId'))
+
+        # Add polygons to EVERT engine
+        # TODO: for bounding box approximations, we could reduce the number of triangles by
+        # half if each face of the box was modelled as a single rectangular
+        # polygon.
+        polygons, triangles = getAcousticPolygonsFromModel(model)
+        for polygon, triangle in zip(polygons, triangles):
+
+            # Validate triangle (ignore if area is too small)
+            dims = np.max(triangle, axis=0) - np.min(triangle, axis=0)
+            s = np.sum(
+                np.array(dims > self.minWidthThresholdPolygons, dtype=np.int))
+            if s < 2:
+                continue
+
+            polygon.setMaterialId(materialId)
+            self.world.addPolygon(polygon, Vector3(1.0, 1.0, 1.0))
+
+    def _updateListeners(self):
+
+        # Update positions of listeners
+        for agent in self.agents:
+
+            lst_l = None
+            lst_r = None
+            for i in range(self.world.numListeners()):
+                listener = self.world.getListener(i)
+                if listener.getName() ==str(agent.getName()+'left'):
+                    lst_l = listener
+
+                microphoneNp_left = agent.find('**/microphoneL')
+                netMat_l = microphoneNp_left.getNetTransform().getMat()
+                lstNetPos_l = netMat_l.getRow3(3)
+                lstNetMat_l = netMat_l.getUpper3()
+                lst_l.setPosition(Vector3(
+                    lstNetPos_l.x * 1000.0, lstNetPos_l.y * 1000.0, lstNetPos_l.z * 1000.0))  # m to mm
+                # NOTE Orientation matrix: first column is direction vector, second
+                # column is up vector, third column is right vector
+                lst_l.setOrientation(Matrix3(lstNetMat_l.getCell(0, 0), lstNetMat_l.getCell(2, 0), -lstNetMat_l.getCell(1, 0),
+                                       lstNetMat_l.getCell(0, 1), lstNetMat_l.getCell(
+                                           2, 1), -lstNetMat_l.getCell(1, 1),
+                                       lstNetMat_l.getCell(0, 2), lstNetMat_l.getCell(2, 2), -lstNetMat_l.getCell(1, 2)))
+
+                if listener.getName() ==str(agent.getName()+'right'):
+                    lst_r = listener
+
+                microphoneNp_right = agent.find('**/microphoneR')
+                netMat_r = microphoneNp_right.getNetTransform().getMat()
+                lstNetPos_r = netMat_r.getRow3(3)
+                lstNetMat_r = netMat_r.getUpper3()
+                lst_r.setPosition(Vector3(
+                    lstNetPos_r.x * 1000.0, lstNetPos_r.y * 1000.0, lstNetPos_r.z * 1000.0))  # m to mm
+                # NOTE Orientation matrix: first column is direction vector, second
+                # column is up vector, third column is right vector
+                lst_r.setOrientation(Matrix3(lstNetMat_r.getCell(0, 0), lstNetMat_r.getCell(2, 0), -lstNetMat_r.getCell(1, 0),
+                                       lstNetMat_r.getCell(0, 1), lstNetMat_r.getCell(
+                                           2, 1), -lstNetMat_r.getCell(1, 1),
+                                       lstNetMat_r.getCell(0, 2), lstNetMat_r.getCell(2, 2), -lstNetMat_r.getCell(1, 2)))
+
+    def _updateSources(self):
+
+        # NOTE: no need to update position of source, since they are static
+        for objName, _ in iteritems(self.sounds):
+
+            obj = self.scene.scene.find('**/objects/%s' % (objName))
+            src = None
+            for i in range(self.world.numSources()):
+                source = self.world.getSource(i)
+                if source.getName() == str(obj.getName()):
+                    src = source
+                    break
+            assert src is not None
+
+            # Get position and orientation of the static sound source
+            sourceNetTrans = obj.getNetTransform().getMat()
+            sourceNetPos = sourceNetTrans.getRow3(3)
+
+            logger.debug('Static source %s: at position (x=%f, y=%f, z=%f)' % (
+                obj.getName(), sourceNetPos.x, sourceNetPos.y, sourceNetPos.z))
+
+    def step(self, dt):
+
+        if not self.initEvertDone:
+
+            self._initLayoutModels()
+            self._initObjects()
+            self._initAgents()
+
+            self.world.constructBSP()
+
+            self._initPathSolutions()
+            self.initEvertDone = True
+
+        self._updateSources()
+        self._updateListeners()
+        self._updateSrcBuffers(dt)
+        self._updateOutputBuffers(dt)
+
+        if self.debug:
+            self._updateRenderedAcousticSolutions()
 
     def update(self, task):
 
-        data = self._getFrame()
-        self.stream.write(data)
+        # Get dt
+        dt = task.time - self.lastTaskTime
+        # dt2 = ClockObject.getGlobalClock().getDt()
+        self.lastTaskTime = task.time
+        assert dt >= 0.0
+
+        if not self.initEvertDone:
+
+            self._initLayoutModels()
+            self._initObjects()
+            self._initAgents()
+
+            self.world.constructBSP()
+
+            self._initPathSolutions()
+            self.initEvertDone = True
+
+        self._updateSources()
+        self._updateListeners()
+        self._updateSrcBuffers(dt)
+        self._updateOutputBuffers(dt)
+
+        if self.debug:
+            self._updateRenderedAcousticSolutions()
+
+        ClockObject.getGlobalClock().tick()
 
         return task.cont
 
-    def __del__(self):
-        taskMgr.remove('audio-player')
+    def getObservationsForAgent(self, name, clearBuffer=True):
 
-        self.stream.stop_stream()
-        self.stream.close()
-        self.p.terminate()
+        if self.hrtf is not None:
+            channelNames = self.hrtf.channels
+        else:
+            channelNames = ['0','1']
+
+        observations = dict()
+        for i, channelName in enumerate(channelNames):
+
+            observations['audio-buffer-%s' %
+                         (channelName)] = self.outBuffers[name][i, :]
+
+        if clearBuffer:
+            # Clear output buffer
+            self.outBuffers[name] = np.array(
+                [[] for _ in range(self.getNbOutputChannels())])
+
+        return observations
+
+    def addAmbientSound(self, sound):
+        if sound not in self.ambientSounds:
+            self.ambientSounds.append(sound)
+
+            # Allocate a buffer for that sound
+            nbMaxSamples = int(self.maxBufferLength * self.samplingRate)
+            self.srcBuffers[sound] = np.zeros((nbMaxSamples,), np.float32)
+
+    def attachSoundToObject(self, sound, obj):
+        """
+        Sound will come from the location of the object it is attached to
+        """
+
+        if obj.hasTag('physics-mode') and obj.getTag('physics-mode') != 'static':
+            raise Exception('Sources in EVERT must be static!')
+
+        sound.resample(self.samplingRate)
+
+        self.sounds[obj.getName()] = sound
+
+        # Allocate a buffer for that sound
+        nbMaxSamples = int(self.maxBufferLength * self.samplingRate)
+        self.srcBuffers[sound] = np.zeros((nbMaxSamples,), np.float32)
+
+        # Create source in EVERT
+        src = Source()
+        src.setName(obj.getName())
+
+        # Get position and orientation of the static sound source
+        sourceNetTrans = obj.getNetTransform().getMat()
+        sourceNetPos = sourceNetTrans.getRow3(3)
+        sourceNetMat = sourceNetTrans.getUpper3()
+        src.setPosition(
+            Vector3(sourceNetPos.x * 1000.0, sourceNetPos.y * 1000.0, sourceNetPos.z * 1000.0))  # m to mm
+
+        # NOTE Orientation matrix: first column is direction vector, second
+        # column is up vector, third column is right vector
+        src.setOrientation(Matrix3(sourceNetMat.getCell(0, 0), sourceNetMat.getCell(2, 0), -sourceNetMat.getCell(1, 0),
+                                   sourceNetMat.getCell(0, 1), sourceNetMat.getCell(
+                                       2, 1), -sourceNetMat.getCell(1, 1),
+                                   sourceNetMat.getCell(0, 2), sourceNetMat.getCell(2, 2), -sourceNetMat.getCell(1, 2)))
+
+        logger.debug('Static source %s: at position (x=%f, y=%f, z=%f)' % (
+            obj.getName(), sourceNetPos.x, sourceNetPos.y, sourceNetPos.z))
+
+        # Add as source in EVERT
+        self.world.addSource(src)
+
+        # Add acoustic node in scene graph
+        obj.setTag('acoustics-mode', 'source')
+        acousticsNp = obj.attachNewNode('acoustics')
+        if self.debug:
+            # Load model for the sound source
+            acousticModel = self._loadSphereModel(
+                LVector3f(0, 0, 0), radius=0.15, color=(1.0, 0.0, 0.0, 1.0))
+            acousticModel.reparentTo(acousticsNp)
+
+        return 1
+
+    def _initPathSolutions(self):
+
+        # Create new solutions for all pairs of source-listener
+        for i in range(self.world.numSources()):
+            src = self.world.getSource(i)
+            obj = self.scene.scene.find('**/objects/%s' % (src.getName()))
+            sound = self.sounds[src.getName()]
+
+            for l in range(self.world.numListeners()):
+                lst = self.world.getListener(l)
+
+                # WARNING: we have to create the PathSolution instances after adding all sources and listeners,
+                # otherwise it leads to memory errors since sources can be
+                # moved in memory-space.
+                solution = PathSolution(
+                    self.world, src, lst, self.maximumOrder)
+
+                # Force update to pre-compute cache
+                solution.update()
+
+                if lst.getName() not in self.solutions:
+                    self.solutions[lst.getName()] = []
+
+                self.solutions[lst.getName()].append(
+                    (solution, sound, obj.getName()))
+
+    def _updateSrcBuffers(self, dt):
+
+        if dt > 0.0:
+
+            # NOTE: round dt to make sure it equals an non-fractional number of
+            # samples
+            dt = float(int(np.floor(dt * self.samplingRate)) /
+                       self.samplingRate)
+            newDataLength = int(np.round(dt * self.samplingRate))
+
+            # Gather all attached and ambient sounds
+            sounds = []
+            for sound in itervalues(self.sounds):
+                sounds.append(sound)
+            sounds.extend(self.ambientSounds)
+
+            for sound in sounds:
+
+                # TODO: handle isActive() property of sounds
+
+                # Check sound status for updating audio buffer
+                if sound.status() == AudioSound.PLAYING:
+
+                    # Check the current seek position for the sound and get
+                    # data
+                    tStart = sound.t
+                    tEnd = sound.t + dt
+
+                    if tEnd <= sound.length():
+                        # Get the sound data for this timestep
+                        startIdx = int(np.round(tStart * sound.samplingRate))
+                        endIdx = int(np.round(tEnd * sound.samplingRate)) - 1
+                        data = sound.data[startIdx:endIdx + 1]
+                    else:
+                        # Get the sound data for this timestep
+                        startIdx = int(tStart * sound.samplingRate)
+                        data = sound.data[startIdx:]
+
+                        # Pad end with zeros to match desired buffer length
+                        data = np.pad(
+                            data, [(0, newDataLength - len(data))], mode='constant')
+
+                        # Indicates end of play loop
+                        sound.curLoopCount += 1
+                        sound.stop()
+
+                    # Update buffer for sound
+                    assert len(data) == newDataLength
+                    buf = self.srcBuffers[sound]
+                    if newDataLength < len(buf):
+                        # Shift buffer to make place for new data
+                        buf[:len(buf) - len(data)] = buf[len(data):]
+                        buf[len(buf) - len(data):] = data
+                    else:
+                        buf = data[len(data) - len(buf):]
+                    self.srcBuffers[sound] = buf
+
+                    # Update seek position for sound
+                    sound.t += dt
+
+                elif sound.status() == AudioSound.READY:
+
+                    # Update buffer for sound
+                    buf = self.srcBuffers[sound]
+                    data = np.zeros((newDataLength,), dtype=buf.dtype)
+                    if newDataLength < len(buf):
+                        # Shift buffer to make place for new data
+                        buf[:len(buf) - len(data)] = buf[len(data):]
+                        buf[len(buf) - len(data):] = data
+                    else:
+                        buf = data[len(data) - len(buf):]
+                    self.srcBuffers[sound] = buf
+
+                # Handling of loop mode for sounds
+                if sound.status() == AudioSound.READY:
+                    if sound.getLoop():
+                        # Check loop count: 0 = forever; 1 = play once; n =
+                        # play n times
+                        if sound.getLoopCount() > 0:
+                            if sound.curLoopCount < sound.getLoopCount():
+                                # Not yet reach the maximum replay limit
+                                sound.play()
+
+    def _updateOutputBuffers(self, dt):
+
+        if dt > 0.0:
+
+            # Loop for all agent
+            for agent in self.agents:
+
+                # Initialize new output buffer for this timestep
+                # NOTE: round dt to make sure it equals an non-fractional
+                # number of samples
+                dt = float(int(np.floor(dt * self.samplingRate)) /
+                           self.samplingRate)
+                newDataLength = int(np.round(dt * self.samplingRate))
+
+                # FIXME: need to take care of buffer overrun here
+                if dt > self.maxBufferLength + self.maxImpulseLength:
+                    newDataLength = int(
+                        (self.maxBufferLength - self.maxImpulseLength) * self.samplingRate)
+
+                outBuf = np.zeros(
+                    (2, newDataLength), dtype=np.float32)
+
+                # Loop for all attached left sounds
+                if agent.getName()in self.solutions:
+                    for solution, sound, _ in self.solutions[agent.getName()]:
+
+                        # NOTE: fast update of the solution, since the beam
+                        # tree should already has been pre-computed
+                        solution.update()
+
+                        # Get the impulse response related to this
+                        # source-listener pair
+
+                        impulse = self._calculateImpulseResponse(
+                            solution, agent.getName())
+
+                        if impulse.shape[-1] > 0:
+
+                            # Get the source buffer related to the sound
+                            buf = self.srcBuffers[sound]
+
+                            # Convolve source with impulse and add contribution
+                            # to output buffer
+                            nbChannels = impulse.shape[0]
+                            nbInSamples = newDataLength + impulse.shape[1] - 1
+                            for channel in range(nbChannels):
+
+                                outBuf[channel, :] += signal.convolve(
+                                    buf[len(buf) - nbInSamples:], np.absolute(impulse[channel]), mode='valid') * sound.getVolume()
+
+                # Loop for all ambient sounds
+                for sound in self.ambientSounds:
+
+                    # Get the source buffer related to the sound
+                    buf = self.srcBuffers[sound]
+
+                    # Add contribution equally to all channels
+                    nbChannels = self.getNbOutputChannels()
+                    nbInSamples = newDataLength
+                    for channel in range(nbChannels):
+                        outBuf[channel,
+                               :] += buf[len(buf) - nbInSamples:] * sound.getVolume()
+
+                # XXX: should we concatenate to create a continuous buffer or
+                # simply append as frames to a list?
+                self.outBuffers[agent.getName()] = np.concatenate(
+                    (self.outBuffers[agent.getName()], outBuf), axis=-1)
+

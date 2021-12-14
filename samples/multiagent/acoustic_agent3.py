@@ -74,45 +74,6 @@ SUNCG_DATA_DIR=TEST_SUNCG_DATA_DIR
 
 
 logger = logging.getLogger(__name__)
-class Soundsource(object):
-    def __init__(self,scene,sourceId,sourceSize=0.25):
-    	self.scene=scene
-    	self.sourceId=sourceId
-    	
-    	
-        modelFilename = os.path.join(TEST_SUNCG_DATA_DIR,'..', 'models', 'sphere.egg')
-        objectsNp = scene.scene.attachNewNode('objects')
-        objectsNp.setTag('acoustics-mode', 'source')
-        objectNp = objectsNp.attachNewNode('object-' + sourceId)
-        source = loadModel(modelFilename)
-        source.setName('source-' + sourceId)
-        source.setTransform(TransformState.makeScale(sourceSize))
-        source.reparentTo(objectNp)
-        objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
-
-        samplingRate = 16000.0
-        hrtf = CipicHRTF(os.path.join(TEST_SUNCG_DATA_DIR,'..','hrtf',
-                                      'cipic_hrir.mat'), samplingRate)
-        acoustics = EvertAcoustics(
-            scene, hrtf, samplingRate, maximumOrder=2, maxBufferLength=30.0)
-
-        # Attach sound to object
-        filename = os.path.join(TEST_SUNCG_DATA_DIR, '..','audio', 'toilet.ogg')
-        sound = EvertAudioSound(filename)
-        acoustics.attachSoundToObject(sound, objectNp)
-        sound.play()
-        acoustics.step(0)
-        
-        # Hide ceilings
-        for nodePath in scene.scene.findAllMatches('**/layouts/*/acoustics/*c'):
-            nodePath.hide(BitMask32.allOn())
-
-
-        self.acoustics=acoustics
-
-
-
-
 
 class Agent(object):
 
@@ -299,10 +260,10 @@ def main():
         agent = Agent(scene, 'agent-%d' % (i), agentRadius)
         agents.append(agent)
 
-
-
-
-
+    physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
+                                   agentRadius=0.15, agentMode='sphere')
+    agents[0].setPosition((42.5, -39.1, 0.7))
+    agents[0].setOrientation((0,0,0))
     # NOTE: specify to move the camera slightly outside the model (not to render the interior of the model)
     #### This's the spot to modify the camera position:
     ## i) How to have two cameras
@@ -312,10 +273,21 @@ def main():
     # Initialize rendering and physics
     renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=cameraTransform)
     renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
-    print(scene,SUNCG_DATA_DIR)
-    physics = Panda3dBulletPhysics(scene, SUNCG_DATA_DIR, objectMode='box',
-                                   agentRadius=agentRadius, agentMode='sphere')
-    agent.model.listJoints()
+
+    # Define a sound source
+    sourceSize = 0.25
+    modelId = 'source-0'
+    modelFilename = os.path.join(SUNCG_DATA_DIR, "..",'models', 'sphere.egg')
+    objectsNp = scene.scene.attachNewNode('objects')
+    objectsNp.setTag('acoustics-mode', 'source')
+    objectNp = objectsNp.attachNewNode('object-' + modelId)
+    model = loadModel(modelFilename)
+    model.setName('model-' + modelId)
+    model.setTransform(TransformState.makeScale(sourceSize))
+    model.reparentTo(objectNp)
+    objectNp.setPos(LVecBase3f(39, -40.5, 1.5))
+
+
     # Configure the camera
     viewer = Viewer(scene, interactive=False, showPosition=False, cameraMask=renderer.cameraMask)
 
@@ -334,8 +306,8 @@ def main():
     # agents[0].setPosition((45, -42.5, 1.6))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -41.5, 1.6))
-    agents[0].setPosition((42.5, -39.1, 0.7))
-    agents[0].setOrientation((0,0,0))
+    # agents[0].setPosition((42.5, -39.1, 0.7))
+    # agents[0].setOrientation((0,0,0))
     # agents[1].setPosition((42.5, -39, 1.6))
     # agents[2].setPosition((42.5, -38.5, 1.6))
 
