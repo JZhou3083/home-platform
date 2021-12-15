@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # HoME Platform [![Build Status](https://travis-ci.org/HoME-Platform/home-platform.svg?branch=master)](https://travis-ci.org/HoME-Platform/home-platform)
 
 HoME is a platform for artificial agents to learn from vision, audio, semantics, physics, and interaction with objects and
@@ -127,3 +128,7 @@ To do so, just cd into the scripts folder in this repository and run the convers
     # if you installed the dataset via environmental vairable:
     ./convert_suncg.sh $SUNCG_DATA_DIR/ # the trailing slash might be important
     
+=======
+# jz1n20_home
+
+>>>>>>> a2f9e510447913cf25afd5480abb5fe760e78396
