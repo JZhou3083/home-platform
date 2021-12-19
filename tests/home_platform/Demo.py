@@ -60,11 +60,11 @@ class TestEvertAcoustics(unittest.TestCase):
         samplingRate = 16000.0
         # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
         #                               'cipic_hrir.mat'), samplingRate) ## unused
-        microtransform = [TransformState.makePos(LVecBase3f(0.15, 0.6)),TransformState.makePos(LVecBase3f(-1.5,0.0, 0.6))]
+        microtransform = [TransformState.makePos(LVecBase3f(0.15, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.0, 0.6))]
 
         acoustics = EvertAcoustics_jz(
             scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransform=microtransform,
-        maxBufferLength=2)
+        maxBufferLength=5)
 
         # Attach sound to object
         filename = os.path.join(TEST_DATA_DIR, 'audio', 'audio.wav')
@@ -75,11 +75,10 @@ class TestEvertAcoustics(unittest.TestCase):
         sound.play()
         acoustics.step(0.1)
 
-        # print(len(acoustics.outBuffers['agent-0']['agent-0-mic1']))
 
 
         physics = Panda3dBulletPhysics_jz(scene, TEST_SUNCG_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
-#        cameraTransform = TransformState.makePosHpr(LVector3f(0.0,  -0.3, 0),LVector3f(0, 180, 0))
+
         renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=None)
         renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
         # Hide ceilings
