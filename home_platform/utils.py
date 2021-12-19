@@ -436,7 +436,7 @@ class Viewer(ShowBase):
         # this should only be destroyed by the Python garbage collector
         # StaticShowBase.instance.destroy()
 class Viewer_jz(ShowBase):
-    def __init__(self, scene, size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, interactive=True,
+    def __init__(self, scene, nbMicrophones=1,size=(800, 600), zNear=0.1, zFar=1000.0, fov=40.0, shadowing=False, interactive=True,
                  showPosition=False, cameraMask=None):
 
         ShowBase.__init__(self)
@@ -505,8 +505,11 @@ class Viewer_jz(ShowBase):
 
         self.Neck = self.scene.scene.find(
             '**/agents/agent*/+BulletRigidBodyNode/*/Neck')
-        self.micro = self.scene.scene.find(
-            '**/agents/agent*/+BulletRigidBodyNode/*/microphone')
+        self.micro_0 = self.scene.scene.find(
+                '**/agents/agent*/+BulletRigidBodyNode/*/microphoneNp-'+str(0))
+        self.micro_1 = self.scene.scene.find(
+                '**/agents/agent*/+BulletRigidBodyNode/*/microphoneNp-'+str(1))
+
 
         # # reset mouse to start position:
         # self.win.movePointer(0, int(self.centX), int(self.centY))
@@ -551,12 +554,7 @@ class Viewer_jz(ShowBase):
         self.accept("d", setattr, [self, "right", True])
         self.accept("shift-d", setattr, [self, "right", True])
         self.accept("d-up", setattr, [self, "right", False])
-        self.accept("r", setattr, [self, "up", True])
-        self.accept("shift-r", setattr, [self, "up", True])
-        self.accept("r-up", setattr, [self, "up", False])
-        self.accept("f", setattr, [self, "down", True])
-        self.accept("shift-f", setattr, [self, "down", True])
-        self.accept("f-up", setattr, [self, "down", False])
+
         self.accept("shift", setattr, [self, "fast", 10.0])
         self.accept("shift-up", setattr, [self, "fast", 1.0])
 
@@ -600,28 +598,52 @@ class Viewer_jz(ShowBase):
         # compute the new transform state
         cos_dt = np.cos(np.radians(150 * dt))
         sin_dt = np.sin(np.radians(150 * dt))
-        prev_trans = self.micro.getTransform()
+        ## left micro
+        prev_trans = self.micro_0.getTransform()
         pos=prev_trans.pos
         x=pos.getX()
         y=pos.getY()
         z=pos.getZ()
         x_cur=x*cos_dt-y*sin_dt
         y_cur=y*cos_dt+x*sin_dt
-        self.micro.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+        self.micro_0.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+
+        ## right micro
+        prev_trans = self.micro_1.getTransform()
+        pos=prev_trans.pos
+        x=pos.getX()
+        y=pos.getY()
+        z=pos.getZ()
+        x_cur=x*cos_dt-y*sin_dt
+        y_cur=y*cos_dt+x*sin_dt
+        self.micro_1.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+
 
     def head_turnRight(self,dt):
         self.Neck.setP(self.Neck.getP() - 150 * dt)
         # compute the new transform state
         cos_dt = np.cos(np.radians(150 * dt))
         sin_dt = np.sin(np.radians(150 * dt))
-        prev_trans = self.micro.getTransform()
+        ## left micro
+        prev_trans = self.micro_0.getTransform()
         pos=prev_trans.pos
         x=pos.getX()
         y=pos.getY()
         z=pos.getZ()
         x_cur=x*cos_dt+y*sin_dt
         y_cur=y*cos_dt-x*sin_dt
-        self.micro.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+        self.micro_0.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+
+        ## right micro
+        prev_trans = self.micro_1.getTransform()
+        pos=prev_trans.pos
+        x=pos.getX()
+        y=pos.getY()
+        z=pos.getZ()
+        x_cur=x*cos_dt+y*sin_dt
+        y_cur=y*cos_dt-x*sin_dt
+        self.micro_1.setTransform(TransformState.makePos(LVecBase3f(x_cur, y_cur,z)))
+
 
 
 
@@ -651,13 +673,9 @@ class Viewer_jz(ShowBase):
             if self.down:
                 self.cam.setZ(self.cam, self.cam.getZ(
                     self.cam) - self.movSens * self.fast * dt)
-            # if self.cam_up:
-            #     self.cam.setP(self.cam.getR()- 0.01*dt)
-            # if self.cam_down:
-            #     self.cam.setP(self.cam.getR()+ 0.01*dt)
 
             if self.mov_forward:
-                self.agent.setY(self.agent,-1.3*dt)
+                self.agent.setY(self.agent,-2*dt)
 
             if self.mov_backward:
                 self.agent.setY(self.agent,0.5*dt)

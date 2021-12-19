@@ -11,7 +11,7 @@ from direct.actor.Actor import Actor
 from home_platform.suncg import SunCgSceneLoader, loadModel
 from home_platform.core import Scene
 from home_platform.utils import Viewer_jz, vec3ToNumpyArray
-from home_platform.acoustics import EvertAcoustics_demon,EvertAcoustics, CipicHRTF, FilterBank, \
+from home_platform.acoustics import EvertAcoustics, EvertAcoustics_jz,CipicHRTF, FilterBank, \
     MaterialAbsorptionTable, AirAttenuationTable, EvertAudioSound, AudioPlayer,\
     interauralPolarToVerticalPolarCoordinates,\
     verticalPolarToInterauralPolarCoordinates,\
@@ -56,19 +56,15 @@ class TestEvertAcoustics(unittest.TestCase):
         model.reparentTo(objectNp)
         # objectNp.setPos(LVecBase3f(39, -40.5, 1.5))  # In the toilet
         objectNp.setPos(LVecBase3f(48, -42, 1.6))
-        samplingRate = 16000.0
-        hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
-                                      'cipic_hrir.mat'), samplingRate)
-        # microtransformL = TransformState.makePos(LVecBase3f(0.15,0, 0.6))
-        # microtransformR = TransformState.makePos(LVecBase3f(-0.15,0, 0.6))
-        # acoustics = EvertAcoustics_demon(
-        #     scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransformL=microtransformL,microphoneTransformR=microtransformR
-        # maxBufferLength=7)
 
-        microtransform = TransformState.makePos(LVecBase3f(-0.15,0, 0.6))
-        acoustics = EvertAcoustics(
+        samplingRate = 16000.0
+        # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
+        #                               'cipic_hrir.mat'), samplingRate) ## unused
+        microtransform = [TransformState.makePos(LVecBase3f(0.15, 0.6)),TransformState.makePos(LVecBase3f(-1.5,0.0, 0.6))]
+
+        acoustics = EvertAcoustics_jz(
             scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransform=microtransform,
-        maxBufferLength=7)
+        maxBufferLength=2)
 
         # Attach sound to object
         filename = os.path.join(TEST_DATA_DIR, 'audio', 'audio.wav')
@@ -77,7 +73,9 @@ class TestEvertAcoustics(unittest.TestCase):
         sound.setLoop(True)
         sound.setLoopCount(7)
         sound.play()
-        acoustics.step(0.0)
+        acoustics.step(0.1)
+
+        # print(len(acoustics.outBuffers['agent-0']['agent-0-mic1']))
 
 
         physics = Panda3dBulletPhysics_jz(scene, TEST_SUNCG_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
@@ -87,7 +85,7 @@ class TestEvertAcoustics(unittest.TestCase):
         # Hide ceilings
         for nodePath in scene.scene.findAllMatches('**/layouts/*/physics/acoustics/*c'):
             nodePath.hide(BitMask32.allOn())
-        viewer = Viewer_jz(scene, interactive=True,showPosition=False)
+        viewer = Viewer_jz(scene,nbMicrophones=2, interactive=True,showPosition=False)
         # Configure the camera
         # NOTE: in Panda3D, the X axis points to the right, the Y axis is
         # forward, and Z is up
@@ -141,21 +139,31 @@ class TestEvertAcoustics(unittest.TestCase):
 
                     acoustics.getObservationsForAgent(agentNp.getName(),clearBuffer=False)
                     time_cur += dt
-                    if time_cur >= 6 and Store_flag:
+                    if time_cur >= 5 and Store_flag:
                         Store_flag = False
+                        # imp= acoustics.calculateImpulseResponse(
+                        #          objectNp.getName(), agentNp.getName())
                         obs = acoustics.getObservationsForAgent(agentNp.getName())
-                        data = np.array(obs['audio-buffer-0'],
+                        data = np.array([obs['agent-0-mic0']['audio-buffer-0'],obs['agent-0-mic1']['audio-buffer-0']],
                                         dtype=np.float32).T
-
                         wavfile.write('Speech.wav', samplingRate, data)
+                        ## plot of 2 microphones output
                         fig = plt.figure()
-                        plt.plot(data)
+                        plt.plot(data[:,0],label='left-ears')
+                        plt.plot(data[:,1],label='right-ears')
                         plt.show(block=False)
-                        time.sleep(1.0)
+                        plt.legend()
+                        time.sleep(5.0)
                         plt.close(fig)
 
-
-
+                        ## plot of two microphones impulses
+                        # fig = plt.figure()
+                        # plt.plot(imp.impulse[0][0],label='left-ears')
+                        # plt.plot(imp.impulse[1][0],label='right-ears')
+                        # plt.show(block=False)
+                        # plt.legend()
+                        # time.sleep(5.0)
+                        # plt.close(fig)
 
                 # Update viewer
                 viewer.step()
