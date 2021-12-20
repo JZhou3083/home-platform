@@ -693,7 +693,7 @@ class Viewer_jz(ShowBase):
                 self.head_turnRight(dt)
 
         else: # Randomly change angular velocity (rotation around Z-axis)
-            self.agent.setY(self.agent,-0.07*dt)
+            self.agent.setY(self.agent,-0.7*dt)
             if self.rotationStepCounter > 100:
                 # End of rotation
                 self.rotationStepCounter = -1

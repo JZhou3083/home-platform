@@ -59,8 +59,10 @@ class TestEvertAcoustics(unittest.TestCase):
 
         samplingRate = 16000.0
         # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
-        #                               'cipic_hrir.mat'), samplingRate) ## unused
-        microtransform = [TransformState.makePos(LVecBase3f(0.15, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.0, 0.6))]
+        #
+        #                               microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears'cipic_hrir.mat'), samplingRate) ## unused
+        microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(0,-0.15, 0.6))] ## third microphone on the tail
+        #microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears
 
         acoustics = EvertAcoustics_jz(
             scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransform=microtransform,
@@ -74,8 +76,6 @@ class TestEvertAcoustics(unittest.TestCase):
         sound.setLoopCount(7)
         sound.play()
         acoustics.step(0.1)
-
-
 
         physics = Panda3dBulletPhysics_jz(scene, TEST_SUNCG_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
 
@@ -92,6 +92,7 @@ class TestEvertAcoustics(unittest.TestCase):
         transform = TransformState.makePosHpr(LVecBase3f(center.x, center.y-1, 15),
                                           LVecBase3f(0.0, -83.04, 0.0))
         viewer.cam.setTransform(transform)
+
 
         # impulse response
         imp = []
@@ -110,6 +111,7 @@ class TestEvertAcoustics(unittest.TestCase):
             while True:
                 # update physics
                 dt = clock.getDt()
+                print(dt)
                 physics.step(dt)
                 acoustics.step(dt)
 
@@ -140,8 +142,8 @@ class TestEvertAcoustics(unittest.TestCase):
                     time_cur += dt
                     if time_cur >= 5 and Store_flag:
                         Store_flag = False
-                        # imp= acoustics.calculateImpulseResponse(
-                        #          objectNp.getName(), agentNp.getName())
+                        imp= acoustics.calculateImpulseResponse(
+                                 objectNp.getName(), agentNp.getName())
                         obs = acoustics.getObservationsForAgent(agentNp.getName())
                         data = np.array([obs['agent-0-mic0']['audio-buffer-0'],obs['agent-0-mic1']['audio-buffer-0']],
                                         dtype=np.float32).T
@@ -150,19 +152,23 @@ class TestEvertAcoustics(unittest.TestCase):
                         fig = plt.figure()
                         plt.plot(data[:,0],label='left-ears')
                         plt.plot(data[:,1],label='right-ears')
+                        plt.xlabel('samples')
+                        plt.ylabel('output signals')
                         plt.show(block=False)
                         plt.legend()
-                        time.sleep(5.0)
+                        time.sleep(1.0)
                         plt.close(fig)
 
-                        ## plot of two microphones impulses
-                        # fig = plt.figure()
-                        # plt.plot(imp.impulse[0][0],label='left-ears')
-                        # plt.plot(imp.impulse[1][0],label='right-ears')
-                        # plt.show(block=False)
-                        # plt.legend()
-                        # time.sleep(5.0)
-                        # plt.close(fig)
+                        # plot of two microphones impulses
+                        fig = plt.figure()
+                        plt.plot(imp.impulse[0][0],label='left-ears')
+                        plt.plot(imp.impulse[1][0],label='right-ears')
+                        plt.xlabel('samples')
+                        plt.ylabel('sound pressure(normalized)')
+                        plt.show(block=False)
+                        plt.legend()
+                        time.sleep(20.0)
+                        plt.close(fig)
 
                 # Update viewer
                 viewer.step()
