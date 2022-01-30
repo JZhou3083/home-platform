@@ -1,0 +1,13 @@
+# Blender v3.0.1 OBJ File: 'CR2.blend'
+# www.blender.org
+mtllib CR2.mtl
+o light-point4-side_ID139
+v 1.855997 2.862999 -1.112028
+v 1.855997 2.988000 -0.832028
+v 1.855997 2.862999 -0.832028
+v 1.855997 2.988000 -1.112028
+vn 1.0000 0.0000 0.0000
+usemtl mat_CR2_concrete
+s off
+f 532//89 533//89 534//89
+f 533//89 532//89 535//89

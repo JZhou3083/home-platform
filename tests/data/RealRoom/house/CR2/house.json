@@ -1,0 +1,32 @@
+{
+  "version": "CR2@1.0.0",
+  "id": "CR2",
+  "up": [
+    0,
+    1,
+    0
+  ],
+  "front": [
+    0,
+    0,
+    1
+  ],
+  "scaleToMeters": 1,
+  "levels": [
+    {
+      "id": "0",
+      "nodes": [
+        {
+          "id": "0_0",
+          "type": "Room",
+          "valid": 1,
+          "modelId": "CR2",
+          "roomTypes": [
+            "Lab"
+          ]
+        }
+      ]
+    }
+  ]
+
+}

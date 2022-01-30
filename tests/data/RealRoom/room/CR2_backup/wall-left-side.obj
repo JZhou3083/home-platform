@@ -1,0 +1,13 @@
+# Blender v3.0.1 OBJ File: 'CR2.blend'
+# www.blender.org
+mtllib CR2.mtl
+o wall-left-side_ID85
+v -1.616492 0.000000 2.890622
+v -1.616492 2.988000 4.254622
+v -1.616492 0.000000 4.254622
+v -1.616492 2.988000 2.880621
+vn 1.0000 0.0000 0.0000
+usemtl mat_CR2_concrete
+s off
+f 464//75 465//75 466//75
+f 465//75 464//75 467//75
