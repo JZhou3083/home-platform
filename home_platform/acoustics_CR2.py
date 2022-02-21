@@ -55,10 +55,10 @@ MODEL_DATA_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data", "models")
 
 ## Fractional delay FIlter with linear intepolation look up table
-def fast_rir_builder( rir, time, alpha, fs, fdl=8001, lut_gran=20):
+def fast_rir_builder( rir, time, alpha, fs, fdl=81, lut_gran=20):
 
     '''
-    Fast impulse response builder. This function takes the image source delays
+    Fast impulse response builder. This function takes the delays
     and amplitude and fills the impulse response. It uses a linear interpolation
     of the sinc function for speed.
 
