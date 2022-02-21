@@ -54,7 +54,7 @@ class TestEvertAcoustics(unittest.TestCase):
         model.reparentTo(objectNp)
 
         objectNp.setPos(LVecBase3f(3, 3, 0.15))
-        samplingRate = 44000.0
+        samplingRate = 44100.0
         # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
         #
         #                               microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears'cipic_hrir.mat'), samplingRate) ## unused
@@ -62,7 +62,7 @@ class TestEvertAcoustics(unittest.TestCase):
         #microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears
 
         acoustics = EvertAcoustics_jz(
-            scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransform=microtransform,
+            scene, None, samplingRate, maximumOrder=3, debug=True, microphoneTransform=microtransform,
         maxBufferLength=12)
 
         acoustics.showRoomLayout(showCeilings=False)
@@ -108,7 +108,7 @@ class TestEvertAcoustics(unittest.TestCase):
             while True:
                 # update physics
                 dt = clock.getDt()
-                # print(dt)
+                print(dt)
                 physics.step(dt)
                 acoustics.step(dt)
 
