@@ -105,142 +105,6 @@ SOUNDSPEED = 343.0
 real_filename ='/home/jzhou3083/work/evaluation/measurement/RIR_LS1_MP3.wav'
 simulated_filename= '/home/jzhou3083/work/evaluation/simulation/IR_LS1_MP3.wav'
 
-def mean_alpha(alphas, surfaces):
-    """
-    Calculate mean of absorption coefficients.
-
-    :param alphas: Absorption coefficients :math:`\\alpha`.
-    :param surfaces: Surfaces :math:`S`.
-    """
-    return np.average(alphas, axis=0, weights=surfaces)
-
-
-def nrc(alphas):
-    """
-    Calculate Noise Reduction Coefficient (NRC) from four absorption
-    coefficient values (250, 500, 1000 and 2000 Hz).
-
-    :param alphas: Absorption coefficients :math:`\\alpha`.
-
-    """
-    alpha_axis = alphas.ndim - 1
-    return np.mean(alphas, axis=alpha_axis)
-
-
-def t60_sabine(surfaces, alpha, volume, c=SOUNDSPEED):
-    """
-    Reverberation time according to Sabine.
-
-    :param surfaces: Surface of the room :math:`S`.
-        NumPy array that contains different surfaces.
-    :type surfaces: :class:`np.ndarray`
-    :param alpha: Absorption coefficient of the room :math:`\\alpha`.
-        Contains absorption coefficients of ``surfaces``.
-        It could be one value or some values in different bands (1D and 2D
-        array, respectively).
-    :type alpha: :class:`np.ndarray`
-    :param volume: Volume of the room :math:`V`.
-    :type volume: :class:`float`
-    :param c: Speed of sound :math:`c`.
-    :type c: :class:`float`
-    :returns: Reverberation time :math:`T_{60}`
-
-    Sabine's formula for the reverberation time is:
-
-    .. math:: T_{60} = \\frac{24 \\ln(10)}{c} \\frac{V}{S\\alpha}
-
-    """
-    mean_alpha_ = np.average(alpha, axis=0, weights=surfaces)
-    S = np.sum(surfaces, axis=0)
-    A = S * mean_alpha_
-    t60 = 4.0 * np.log(10.0**6.0) * volume / (c * A)
-    return t60
-
-
-def t60_eyring(surfaces, alpha, volume, c=SOUNDSPEED):
-    """
-    Reverberation time according to Eyring.
-
-    :param surfaces: Surfaces :math:`S`.
-    :param alpha: Mean absorption coefficient :math:`\\alpha` or by frequency bands
-    :param volume: Volume of the room :math:`V`.
-    :param c: Speed of sound :math:`c`.
-    :returns: Reverberation time :math:`T_{60}`
-
-    Eyring's formula for the reverberation time is:
-
-    .. math:: T_{60} = \\frac{24 \\ln{10} V}{c \\left( 4 mV - S \\ln{\\left( 1 - \\alpha \\right)} \\right)}
-
-    """
-    mean_alpha_ = np.average(alpha, axis=0, weights=surfaces)
-    S = np.sum(surfaces, axis=0)
-    A = -S * np.log(1 - mean_alpha_)
-    t60 = 4.0 * np.log(10.0**6.0) * volume / (c * A)
-    return t60
-
-
-def t60_millington(surfaces, alpha, volume, c=SOUNDSPEED):
-    """
-    Reverberation time according to Millington.
-
-    :param surfaces: Surfaces :math:`S`.
-    :param alpha: Mean absorption coefficient :math:`\\alpha` or by frequency bands
-    :param volume: Volume of the room :math:`V`.
-    :param c: Speed of sound :math:`c`.
-    :returns: Reverberation time :math:`T_{60}`
-    """
-    mean_alpha_ = np.average(alpha, axis=0, weights=surfaces)
-    A = -np.sum(surfaces[:, np.newaxis] * np.log(1.0 - mean_alpha_), axis=0)
-    t60 = 4.0 * np.log(10.0**6.0) * volume / (c * A)
-    return t60
-
-
-def t60_fitzroy(surfaces, alpha, volume, c=SOUNDSPEED):
-    """
-    Reverberation time according to Fitzroy.
-
-    :param surfaces: Surfaces :math:`S`.
-    :param alpha: Mean absorption coefficient :math:`\\alpha` or by frequency bands
-    :param volume: Volume of the room :math:`V`.
-    :param c: Speed of sound :math:`c`.
-    :returns: Reverberation time :math:`T_{60}`
-    """
-    Sx = np.sum(surfaces[0:2])
-    Sy = np.sum(surfaces[2:4])
-    Sz = np.sum(surfaces[4:6])
-    St = np.sum(surfaces)
-    alpha = _is_1d(alpha)
-    a_x = np.average(alpha[:, 0:2], weights=surfaces[0:2], axis=1)
-    a_y = np.average(alpha[:, 2:4], weights=surfaces[2:4], axis=1)
-    a_z = np.average(alpha[:, 4:6], weights=surfaces[4:6], axis=1)
-    factor = -(Sx / np.log(1.0 - a_x) + Sy / np.log(1.0 - a_y) + Sz / np.log(1 - a_z))
-    t60 = 4.0 * np.log(10.0**6.0) * volume * factor / (c * St**2.0)
-    return t60
-
-
-def t60_arau(Sx, Sy, Sz, alpha, volume, c=SOUNDSPEED):
-    """
-    Reverberation time according to Arau. [#arau]_
-
-    :param Sx: Total surface perpendicular to x-axis (yz-plane) :math:`S_{x}`.
-    :param Sy: Total surface perpendicular to y-axis (xz-plane) :math:`S_{y}`.
-    :param Sz: Total surface perpendicular to z-axis (xy-plane) :math:`S_{z}`.
-    :param alpha: Absorption coefficients :math:`\\mathbf{\\alpha} = \\left[ \\alpha_x, \\alpha_y, \\alpha_z \\right]`
-    :param volume: Volume of the room :math:`V`.
-    :param c: Speed of sound :math:`c`.
-    :returns: Reverberation time :math:`T_{60}`
-
-    .. [#arau] For more details, please see
-       http://www.arauacustica.com/files/publicaciones/pdf_esp_7.pdf
-    """
-    a_x = -np.log(1 - alpha[0])
-    a_y = -np.log(1 - alpha[1])
-    a_z = -np.log(1 - alpha[2])
-    St = np.sum(np.array([Sx, Sy, Sz]))
-    A = St * a_x**(Sx / St) * a_y**(Sy / St) * a_z**(Sz / St)
-    t60 = 4.0 * np.log(10.0**6.0) * volume / (c * A)
-    return t60
-
 
 def t60_impulse(file_name, bands, rt='t30'):  # pylint: disable=too-many-locals
     """
@@ -266,19 +130,15 @@ def t60_impulse(file_name, bands, rt='t30'):  # pylint: disable=too-many-locals
     if rt == 't30':
         init = -5.0
         end = -35.0
-        # factor = 2.0
     elif rt == 't20':
         init = -5.0
         end = -25.0
-        # factor = 3.0
     elif rt == 't10':
         init = -5.0
         end = -15.0
-        # factor = 6.0
     elif rt == 'edt':
         init = 0.0
         end = -10.0
-        # factor = 6.0
     factor=1
 
     t60 = np.zeros(bands.size)
@@ -368,8 +228,6 @@ def c80_from_file(file_name, bands=None):
 
 def DIC_drom_file(file_name, bands=None):
     """
-
-
     """
     fs, signal = wavfile.read(file_name)
     return Dic(50, signal, fs, bands)
