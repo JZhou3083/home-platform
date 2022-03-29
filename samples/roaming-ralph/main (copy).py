@@ -87,6 +87,8 @@ class RoamingRalphDemo(ShowBase):
         # one optimized for rendering, one for collisions.
 
         self.environ = loader.loadModel("models/world")
+        # self.environ = loader.loadModel("models/eve_egg")
+
         print(self.environ)
         self.environ.reparentTo(render)
 

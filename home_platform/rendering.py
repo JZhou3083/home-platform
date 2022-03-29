@@ -1741,7 +1741,6 @@ def getColorAttributesFromModel(model, region=None):
     transparencies = []
     for nodePath in model.findAllMatches('**/+GeomNode'):
         geomNode = nodePath.node()
-
         if region is not None and region not in geomNode.getName():
             continue
 
@@ -1749,6 +1748,7 @@ def getColorAttributesFromModel(model, region=None):
             state = geomNode.getGeomState(n)
 
             geom = geomNode.getGeom(n)
+
             area = getSurfaceAreaFromGeom(geom, transformMat)
 
             if state.hasAttrib(TextureAttrib.getClassType()):
@@ -1823,7 +1823,6 @@ def getColorAttributesFromModel(model, region=None):
                     rgbColors.extend(verRgbColors)
                     transparencies.extend(vertransparencies)
                     textures.extend([None, ] * len(vertransparencies))
-
     areas = np.array(areas)
     areas /= np.sum(areas)
 

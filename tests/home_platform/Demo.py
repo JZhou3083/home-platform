@@ -9,6 +9,7 @@ from panda3d.core import TransformState, LVecBase3f, LMatrix4f, BitMask32, Audio
 from panda3d.core import LVector3f, TransformState, ClockObject, LVecBase3f, BitMask32, LVector4f,AudioSound
 from direct.actor.Actor import Actor
 from home_platform.suncg import SunCgSceneLoader, loadModel
+# from home_platform.realRoom import SunCgSceneLoader, loadModel
 from home_platform.core import Scene
 from home_platform.utils import Viewer_jz, vec3ToNumpyArray
 from home_platform.acoustics import EvertAcoustics, EvertAcoustics_jz,CipicHRTF, FilterBank, \
@@ -22,6 +23,8 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data")
 TEST_SUNCG_DATA_DIR = os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data", "suncg")
+TEST_REAL_DATA_DIR = os.path.join(os.path.dirname(
+    os.path.realpath(__file__)), "..", "data", "RealRoom")
 modelpath= os.path.join(os.path.dirname(
     os.path.realpath(__file__)), "..", "data", "models")
 class TestEvertAcoustics(unittest.TestCase):
@@ -29,13 +32,16 @@ class TestEvertAcoustics(unittest.TestCase):
 
         scene = SunCgSceneLoader.loadHouseFromJson(
             "0004d52d1aeeb8ae6de39d6bd993e992", TEST_SUNCG_DATA_DIR)
+        # scene = SunCgSceneLoader.loadHouseFromJson(
+        #     "CR2", TEST_REAL_DATA_DIR)
+
         agentNp = scene.agents[0]
         model = Actor(os.path.join(modelpath,'eve'),  # Load our animated charachter
                          {'walk': os.path.join(modelpath,'eve_walk')})
 #        model.setColor(LVector4f(np.random.uniform(), np.random.uniform(), np.random.uniform(), 1.0))
         model.setColor(LVector4f(0.75,0.70,0.8, 1.0))
         model.setTransform(TransformState.makeScale(0.15))
-        eveNeck=model.controlJoint(None,'modelRoot','Neck')
+        # eveNeck=model.controlJoint(None,'modelRoot','Neck')
         model.reparentTo(agentNp)
         # agentNp.setPos(LVecBase3f(45, -42, 1.6))
         # agentNp.seiiiitPos(LVecBase3f(40, -41.5, 1.6))
@@ -57,26 +63,25 @@ class TestEvertAcoustics(unittest.TestCase):
         # objectNp.setPos(LVecBase3f(39, -40.5, 1.5))  # In the toilet
         objectNp.setPos(LVecBase3f(48, -42, 1.6))
 
-        samplingRate = 16000.0
+        samplingRate = 44100.0
         # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
         #
         #                               microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears'cipic_hrir.mat'), samplingRate) ## unused
-        microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(0,-0.15, 0.6))] ## third microphone on the tail
+        microtransform = [TransformState.makePos(LVecBase3f(0.15, 0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## third microphone on the tail,,TransformState.makePos(LVecBase3f(0,-0.15, 0.6))
         #microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears
 
         acoustics = EvertAcoustics_jz(
             scene, None, samplingRate, maximumOrder=2, debug=True, microphoneTransform=microtransform,
-        maxBufferLength=5)
+        maxBufferLength=15)
 
         # Attach sound to object
-        filename = os.path.join(TEST_DATA_DIR, 'audio', 'audio.wav')
+        filename = os.path.join(TEST_DATA_DIR, 'audio', 'music.wav')
         sound = EvertAudioSound(filename)
         acoustics.attachSoundToObject(sound, objectNp)
         sound.setLoop(True)
-        sound.setLoopCount(7)
+        sound.setLoopCount(100)
         sound.play()
-        acoustics.step(0.1)
-
+        acoustics.step(0.0)
         physics = Panda3dBulletPhysics_jz(scene, TEST_SUNCG_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
 
         renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=None)
@@ -84,7 +89,7 @@ class TestEvertAcoustics(unittest.TestCase):
         # Hide ceilings
         for nodePath in scene.scene.findAllMatches('**/layouts/*/physics/acoustics/*c'):
             nodePath.hide(BitMask32.allOn())
-        viewer = Viewer_jz(scene,nbMicrophones=2, interactive=True,showPosition=False)
+        viewer = Viewer_jz(scene,nbMicrophones=3, interactive=True,showPosition=False)
         # Configure the camera
         # NOTE: in Panda3D, the X axis points to the right, the Y axis is
         # forward, and Z is up
@@ -167,7 +172,7 @@ class TestEvertAcoustics(unittest.TestCase):
                         plt.ylabel('sound pressure(normalized)')
                         plt.show(block=False)
                         plt.legend()
-                        time.sleep(20.0)
+                        time.sleep(0.5)
                         plt.close(fig)
 
                 # Update viewer

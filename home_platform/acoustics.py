@@ -267,10 +267,8 @@ class TextureAbsorptionTable(object):
 
         # Get the list of materials
         areas, _, _, textures = getColorAttributesFromModel(model)
-
         totalCoefficients = np.zeros(len(MaterialAbsorptionTable.frequencies))
         for area, texture in zip(areas, textures):
-
             if texture is None:
                 texture = 'default'
             else:
@@ -598,10 +596,8 @@ class AirAttenuationTable(object):
         attenuations = np.array(
             AirAttenuationTable.table[closestTemperatureIdx][closestHumidityIdx])
         frequencies = np.array(AirAttenuationTable.frequencies)
-
         eps = np.finfo(np.float).eps
         attenuations = np.clip(distance * 1e-3 * attenuations, 0.0, 1.0 - eps)
-
         if units == 'dB':
             eps = np.finfo(np.float).eps
             attenuations = 20.0 * np.log10(1.0 - attenuations + eps)
@@ -610,7 +606,6 @@ class AirAttenuationTable(object):
             pass
         else:
             raise Exception('Unsupported units: %s' % (units))
-
         return attenuations, frequencies
 
 
@@ -632,6 +627,7 @@ class FilterBank(object):
         centerFrequencies = np.array(centerFrequencies, dtype=np.float)
         centerNormFreqs = centerFrequencies / (self.samplingRate / 2.0)
         cutoffs = centerNormFreqs[:-1] + np.diff(centerNormFreqs) / 2
+
 
         filters = []
         for i in range(len(centerFrequencies)):
@@ -662,6 +658,7 @@ class FilterBank(object):
     def getScaledImpulseResponse(self, scales=1):
         if not isinstance(scales, (list, tuple)):
             scales = scales * np.ones(len(self.filters))
+
         return np.sum(self.filters * scales[:, np.newaxis], axis=0)
 
     def getScaledImpulseResponseFourier(self, scales=1):
@@ -1935,16 +1932,19 @@ class EvertAudioSound(object):
 
         # Load sound from file
         data, fs = sf.read(filename)
-
         # Make sure the sound is mono, and keep the first channel only
-        if data.ndim == 2 and data.shape[0] >= 1:
-            data = data[0, :]
+        if data.ndim == 2 and np.maximum(data.shape[0], data.shape[0]) >= 1:
+            if data.shape[0]>data.shape[1]:
+                data=np.transpose(data)
+                data = data[0,:]
+            else:
+                data = data[0,:]
+
 
         # Normalize in the interval [-1, 1]
         data = data / np.max(np.abs(data))
         self.data =data
         self.samplingRate = fs
-
         self.reset()
 
     def reset(self):
@@ -2224,7 +2224,6 @@ class EvertAcoustics_jz(World):
 
         self.lastTaskTime = 0.0
         # taskMgr.add(self.update, 'acoustics', sort=0)
-
     def showRoomLayout(self, showCeilings=True, showWalls=True, showFloors=True):
 
         for np in self.scene.scene.findAllMatches('**/layouts/**/acoustics/*c'):
@@ -2300,7 +2299,7 @@ class EvertAcoustics_jz(World):
 
         return model
 
-    def setAirConditions(self, pressureAtm=1.0, temperature=20.0, relativeHumidity=65.0):
+    def setAirConditions(self, pressureAtm=1.0, temperature=19.5, relativeHumidity=41.7):
         self.pressureAtm = pressureAtm
         self.temperature = temperature
         self.relativeHumidity = relativeHumidity
@@ -2438,7 +2437,7 @@ class EvertAcoustics_jz(World):
 
             # Calculate air attenuation coefficient (dB)
             airAttenuations, _ = AirAttenuationTable.getAttenuations(cumLength, self.temperature, self.relativeHumidity,
-                                                                     units='dB')
+                                                                units='dB')
 
             # Calculate spherical geometric spreading attenuation (dB)
             distanceAttenuations = 20.0 * np.log10(1.0 / cumLength)
@@ -3222,8 +3221,5 @@ class EvertAcoustics_jz(World):
                     # simply append as frames to a list?
                     self.outBuffers[agent.getName()][lstName] = np.concatenate(
                         (self.outBuffers[agent.getName()][lstName], outBuf), axis=-1)
-
-
-
 
 

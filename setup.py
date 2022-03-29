@@ -14,7 +14,12 @@ astar_module = Extension('home_platform.pathfinding._astar',
                          swig_opts=['-c++', '-I./swig'],
                          extra_compile_args=['-O3', '-std=c++0x'],
                          )
-
+build_rir_module = Extension(
+        "home_platform.build_rir",
+        ["home_platform/build_rir.pyx"],
+        language="c",
+        extra_compile_args=[],
+    )
 setup(
     name="HoME Platform",
     version="0.1.0",
@@ -24,7 +29,7 @@ setup(
     license="BSD 3-Clause License",
     keywords="artificial intelligence, machine learning, reinforcement learning",
     url="https://github.com/HoME-Platform/home-platform",
-    ext_modules=[astar_module],
+    ext_modules=[astar_module,build_rir_module],
     packages=find_packages(),
     include_package_data=True,
     setup_requires=['setuptools-markdown'],
@@ -36,8 +41,9 @@ setup(
         "panda3d",
         "nltk",
         "PySoundFile"
+        "Cython"
     ],
-    long_description_markdown_filename='README.md',
+
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",

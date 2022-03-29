@@ -542,7 +542,6 @@ class Panda3dBulletPhysics_jz(World):
 
         # Load layout objects as meshes
         for model in self.scene.scene.findAllMatches('**/layouts/object*/model*'):
-
             # NOTE: ignore models that have no geometry defined
             if model.getTightBounds() is None:
                 logger.warning('Object %s has no geometry defined and will be ignored for physics!' % (str(model)))

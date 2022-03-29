@@ -131,30 +131,6 @@ def absorptCoeff(freqs,temp,humid,P_atm= 101.325, unit="dB"):
         alphas.append(alpha)
 
     return alphas
-
-def sequence_generation(volume, duration, c, fs, max_rate=10000):
-    # repeated constant
-    fpcv = 4 * np.pi * c ** 3 / volume
-
-    # initial time
-    t0 = ((2 * np.log(2)) / fpcv) ** (1.0 / 3.0)
-    times = [t0]
-    while times[-1] < t0 + duration:
-
-        # uniform random variable
-        z = np.random.rand()
-        # rate of the point process at this time
-        mu = np.minimum(fpcv * (t0 + times[-1]) ** 2, max_rate)
-        # time interval to next point
-        dt = np.log(1 / z) / mu
-
-        times.append(times[-1] + dt)
-    # convert from continuous to discrete time
-    indices = (np.array(times) * fs).astype(np.int)
-    seq = np.zeros(indices[-1] + 1)
-    seq[indices] = np.random.choice([1, -1], size=len(indices))
-
-    return seq
 class HRTF(object):
 
     def __init__(self, nbChannels, samplingRate, maxLength=None):
@@ -969,7 +945,7 @@ class EvertAcoustics_jz(World):
 
     def __init__(self, scene, hrtf=None, samplingRate=44100, maximumOrder=2, ray_tracing=True,
                  microphoneTransform=None,  minWidthThresholdPolygons=0.0, maxImpulseLength=1.0,
-                 maxBufferLength=3.0,
+                 maxBufferLength=1.5,
                  cameraMask=BitMask32.allOn(),delay = 0):
 
         super(EvertAcoustics_jz, self).__init__()

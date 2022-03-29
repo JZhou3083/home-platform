@@ -93,7 +93,7 @@ class TestEvertAcoustics(unittest.TestCase):
 
         # hrtf = CipicHRTF(os.path.join(TEST_DATA_DIR, 'hrtf',
         #
-        #                               microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears'cipic_hrir.mat'), samplingRate) ## unused
+        #microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears'cipic_hrir.mat'), samplingRate) ## unused
         #microtransform = [TransformState.makePos(LVecBase3f(-0.08,0.06, 0.2)),TransformState.makePos(LVecBase3f(-0.08,-0.06, 0.2))] ## third microphone on the tail ,TransformState.makePos(LVecBase3f(0,-0.15, 0.6))
         #microtransform = [TransformState.makePos(LVecBase3f(0.15,0.03, 0.6)),TransformState.makePos(LVecBase3f(-0.15,0.03, 0.6))] ## two microphones on the ears
         microtransform = [TransformState.makePos(LVecBase3f(0, 0, 0))]
@@ -101,8 +101,8 @@ class TestEvertAcoustics(unittest.TestCase):
         SpeakerId = sourceId
         MicroId = agentId
         acoustics = EvertAcoustics_jz(
-            scene, None, samplingRate, maximumOrder=2, microphoneTransform=microtransform, ray_tracing=True,
-        maxBufferLength=30)
+            scene, None, samplingRate, maximumOrder=orderNb, microphoneTransform=microtransform, ray_tracing=True,
+        maxBufferLength=3)
 
         acoustics.showRoomLayout(showCeilings=False)
 
@@ -116,13 +116,14 @@ class TestEvertAcoustics(unittest.TestCase):
         sound.setLoop(True)
         sound.setLoopCount(3)
         sound.play()
-        acoustics.step(0.1)
+        # acoustics.step(0.1)
 
-        #### This is for debugging and IR plotting
-        # acoustics.world.image_source_model()
-        # acoustics.world.ray_tracing()
-        # acoustics.world.simulate()
-        # imp = acoustics.world.rir[0][0]
+        ### This is for debugging and IR plotting
+        acoustics.world.image_source_model()
+        acoustics.world.ray_tracing()
+        acoustics.world.simulate()
+        acoustics.world.plot_rir()
+        plt.show()
 
         # imp= acoustics.calculateImpulseResponse("source-0","agent-0")
 
@@ -156,54 +157,54 @@ class TestEvertAcoustics(unittest.TestCase):
 
 
 
-        physics = Panda3dBulletPhysics_jz(scene, TEST_REAL_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
-
-        renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=None)
-        renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
-        viewer = Viewer_jz(scene,nbMicrophones=2, interactive=True,showPosition=False)
-        # Configure the camera
-        # NOTE: in Panda3D, the X axis points to the right, the Y axis is
-        # forward, and Z is up
-        center = agentNp.getNetTransform().getPos()
-        transform = TransformState.makePosHpr(LVecBase3f(center.x, center.y-7, 12.5),
-                                          LVecBase3f(0.0, -50, 0.0))
-        viewer.cam.setTransform(transform)
-
-
-        # impulse response
-        imp = []
-        jing = []
-        jing.append(0)
-        Store_flag = True
-        time_cur = 0
-
-        k = 0
-        # main loop
-        clock = ClockObject.getGlobalClock()
-
-        try:
-            while True:
-                # update physics
-                dt = clock.getDt()
-                print(dt)
-                physics.step(dt)
-                acoustics.step(dt)
-
-                # Update viewer
-                viewer.step()
-
+        # physics = Panda3dBulletPhysics_jz(scene, TEST_REAL_DATA_DIR, objectMode='box',agentRadius=0.15, agentMode='sphere')
         #
-        except KeyboardInterrupt:
-
-            pass
-
-        viewer.destroy()
-        physics.destroy()
-        viewer.graphicsEngine.removeAllWindows()
-
-        # Calculate and show impulse responses
-        renderer.destroy()
-        acoustics.destroy()
+        # renderer = RgbRenderer(scene, size=(128, 128), fov=70.0, cameraTransform=None)
+        # renderer.showRoomLayout(showCeilings=False, showWalls=True, showFloors=True)
+        # viewer = Viewer_jz(scene,nbMicrophones=2, interactive=True,showPosition=False)
+        # # Configure the camera
+        # # NOTE: in Panda3D, the X axis points to the right, the Y axis is
+        # # forward, and Z is up
+        # center = agentNp.getNetTransform().getPos()
+        # transform = TransformState.makePosHpr(LVecBase3f(center.x, center.y-7, 12.5),
+        #                                   LVecBase3f(0.0, -50, 0.0))
+        # viewer.cam.setTransform(transform)
+        #
+        #
+        # # impulse response
+        # imp = []
+        # jing = []
+        # jing.append(0)
+        # Store_flag = True
+        # time_cur = 0
+        #
+        # k = 0
+        # # main loop
+        # clock = ClockObject.getGlobalClock()
+        #
+        # try:
+        #     while True:
+        #         # update physics
+        #         dt = clock.getDt()
+        #         print(dt)
+        #         physics.step(dt)
+        #         acoustics.step(dt)
+        #
+        #         # Update viewer
+        #         viewer.step()
+        #
+        # #
+        # except KeyboardInterrupt:
+        #
+        #     pass
+        #
+        # viewer.destroy()
+        # physics.destroy()
+        # viewer.graphicsEngine.removeAllWindows()
+        #
+        # # Calculate and show impulse responses
+        # renderer.destroy()
+        # acoustics.destroy()
 
 
 if __name__ == '__main__':

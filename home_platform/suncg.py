@@ -285,6 +285,8 @@ class ObjectVoxelData(object):
 
 def reglob(path, exp):
     # NOTE: adapted from https://stackoverflow.com/questions/13031989/regular-expression-using-in-glob-glob-of-python
+    # Example: "fr_0rm_3[a-z].bam" To ['/home/jzhou3083/work/home-platform/tests/home_platform/../data/suncg/room/0004d52d1aeeb8ae6de39d6bd993e992/fr_0rm_3f.bam',...]
+    # Have the paths to all the layout files of the room stored in the list variable res
     m = re.compile(exp)
     res = [f for f in os.listdir(path) if m.search(f)]
     res = map(lambda x: "%s/%s" % (path, x, ), res)
@@ -383,7 +385,6 @@ class SunCgModelLights(object):
 
 
 def subdiviseLayoutObject(layoutNp):
-
     objectModelId = layoutNp.getTag('model-id')
 
     geomNodes = list(layoutNp.findAllMatches('**/+GeomNode'))
@@ -391,7 +392,6 @@ def subdiviseLayoutObject(layoutNp):
     layoutNps = []
     if objectModelId.endswith('w'):
         # Wall
-
         # Regroup WallInside and WallOutside geom nodes
         maxIdx = np.max([int(geomNodes[i].getName().split('_')[-1])
                          for i in range(len(geomNodes))])
@@ -459,6 +459,7 @@ class SunCgSceneLoader(object):
 
             roomNpByNodeIndex = {}
             for nodeIndex, node in enumerate(level['nodes']):
+
                 if not node['valid'] == 1:
                     continue
 
@@ -520,10 +521,10 @@ class SunCgSceneLoader(object):
                         for subObjectNp in subdiviseLayoutObject(objectNp):
                             subObjectNp.reparentTo(roomLayoutsNp)
 
+
                     if 'nodeIndices' in node:
                         for childNodeIndex in node['nodeIndices']:
                             roomNpByNodeIndex[childNodeIndex] = roomObjectsNp
-
                 elif node['type'] == 'Object':
                     modelId = str(node['modelId'])
                     logger.debug('Loading Object %s to scene' % (modelId))

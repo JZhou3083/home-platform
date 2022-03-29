@@ -1,0 +1,61 @@
+x
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# On branch Developement
+# Your branch is ahead of 'origin/Developement' by 1 commit.
+#   (use "git push" to publish your local commits)
+#
+# Changes to be committed:
+#	new file:   home_platform/dft.py
+#	new file:   home_platform/stft.py
+#	new file:   home_platform/transform.py
+#
+# Changes not staged for commit:
+#	modified:   home_platform/acoustics.py
+#	modified:   home_platform/acoustics_CR2.py
+#	modified:   home_platform/acoustics_pra.py
+#	modified:   home_platform/physics.py
+#	modified:   home_platform/rendering.py
+#	modified:   home_platform/suncg.py
+#	modified:   home_platform/transform.py
+#	modified:   samples/roaming-ralph/main (copy).py
+#	modified:   setup.py
+#	modified:   tests/data/suncg/house/0004d52d1aeeb8ae6de39d6bd993e992/house.json
+#	modified:   tests/home_platform/Demo.py
+#	modified:   tests/home_platform/Demo_v2.py
+#	modified:   tests/home_platform/Demo_v3.py
+#	modified:   tests/home_platform/Speech.wav
+#
+# Untracked files:
+#	home_platform/build_rir.c
+#	home_platform/build_rir.pyx
+#	samples/roaming-ralph/models/CR2.bam
+#	tests/data/RealRoom/metadata/.~lock.ModelCategoryMapping.csv#
+#	tests/data/RealRoom/texture/
+#	tests/data/audio/class.wav
+#	tests/data/audio/music.wav
+#	tests/data/audio/sweep.wav
+#	tests/data/models/CR2_v2.bam
+#	tests/data/models/CR2_v3.bam
+#	tests/data/models/CR2_v4.bam
+#	tests/data/models/miro-e.bam
+#	tests/data/models/miro-e.egg
+#	tests/data/models/miro-e.mtl
+#	tests/data/models/miro-e.obj
+#	tests/data/suncg/house/0004d52d1aeeb8ae6de39d6bd993e992/house (copy).json
+#	tests/data/suncg/house/CR2/
+#	tests/home_platform/Impulse Response_Hybrid.zip
+#	tests/home_platform/Impulse Response_Hybrid/
+#	tests/home_platform/Impulse.wav
+#	tests/home_platform/Moving_NoPhaseRandomInverse.wav
+#	tests/home_platform/Moving_PhaseRandomInverse.wav
+#	tests/home_platform/Static_NoPhaseRandomInverse.wav
+#	tests/home_platform/Static_PhaseRandomInverse.wav
+#	tests/home_platform/build_rir.pyx
+#	tests/home_platform/fun.py
+#	tests/home_platform/plot_LS1/
+#	tests/home_platform/plot_LS2/
+#	tests/home_platform/reference.wav
+#
